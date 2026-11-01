@@ -1,0 +1,16 @@
+Host verification of the Orange Pi 5 console kernel (nothing of this ran on the board).
+
+Machine: build host, Ubuntu 20.04, no root (user namespace wrapper), CMake 3.30.2.
+Device repository revision: f4bb6e952e915f4f837547f11981ca26b61a5c46
+UniXNU: 066c8d8 (pinned), SoC repository: Ken-u/UniXNU-rk3588-common 9c74681ab5a2e7378197ed8f451b4cafed80dd99
+
+Command:
+  source host/env.sh
+  cd UniXNU-orangepi5 && scripts/build-orangepi5-kernel.sh
+
+Result:
+  unixnu defconfig orangepi5_defconfig, tree, the archive builders (libpthread, corecrypto, ArmDTPlatform, ArmCpu with the
+  SoC patches, AppleKeyStoreState, SoftwareAES and its bindings) and the XNU build complete, the kernel links and the prelink step runs.
+  kernel.macho: Mach-O 64-bit arm64 executable, 51019776 bytes, sha256 0f19cfb27017c542426cff8684633e2f437a9a5c958ae319c6f236bf351214e2
+  The first link failed on _native_emmc_root_trusted (referenced by the SoC patch rk3588-root-trust.patch, defined only by the
+  EVB10 eMMC driver); patches/xnu/orangepi5-root-trust-stub.patch adds a weak definition, after which the link succeeds.

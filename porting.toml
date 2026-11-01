@@ -1,0 +1,255 @@
+schema_version = 1
+
+[device]
+name = "orangepi5"
+soc = "RK3588"
+os_profile = "ipados-17.7.11-21H461"
+summary = "Orange Pi 5 (Rockchip RK3588S) with an HDMI display and an M.2 NVMe drive, planned to run the iPadOS 17.7.11 userland on a source-built XNU, started from edk2-rk3588 firmware (uefi-orangepi5). Shared SoC support is in UniXNU-rk3588-common, which the EVB10 port already proved on hardware. Nothing in this repository has run on an Orange Pi 5 yet: the configuration resolves and the console kernel builds on the host, every area below records what is still to be measured."
+
+[[area]]
+id = "configuration"
+status = "host-verified"
+components = []
+paths = ["board.toml", "feeds.toml", "configs/**", ".github/**", ".gitignore", ".env.example", "local.toml.example", "unixnu.lock", "LICENSE", ".gitattributes", "scripts/build-orangepi5-kernel.sh"]
+inputs = ["ARM64 profile, rk3588 SoC source pinned in feeds.toml, iPadOS 17.7.11 build 21H461 profile, orangepi5_defconfig."]
+configuration = ["board.soc_source = rk3588; board.os_profile = ipados-17.7.11-21H461; schema_version = 2.", "orangepi5_defconfig keeps the console kernel: no display, no GPU, no RAM disk, no UFS; the trust-cache runtime and the code-signing hash cache stay on.", "[adt.defaults.u32] carries sleep-disabled = 1 and vmm-present = 1, which the EVB10 port found necessary for watchdogd."]
+procedure = ["From the UniXNU checkout run ./unixnu defconfig orangepi5_defconfig -D ../UniXNU-orangepi5, then ./unixnu fetch, ./unixnu status --json and ./unixnu tree with the same -D.", "scripts/build-orangepi5-kernel.sh runs the kernel build; it needs the environment of the machine that builds (.env) and CMake 3.19.6 or newer."]
+findings = ["Resolution is host-verified: defconfig, fetch, status --json and tree complete against the pinned SoC repository.", "The UniXNU bootstrap pass builds AvailabilityVersions with CMake; the distribution CMake of Ubuntu 20.04 is 3.16 and fails, so the build script puts /usr/local/bin first."]
+completion = ["Every source pin resolves, ./unixnu status lists the intended patch order, and the defconfig materialises."]
+limits = ["The kernel configuration is the console minimum; storage, display, GPU and input join it as those drivers exist (docs/bring-up.md)."]
+next_action = ["Add the NVMe driver archive and the display archive to board.toml when the drivers exist."]
+
+[[area.evidence]]
+kind = "source"
+reference = "board.toml"
+result = "Board configuration of the console kernel"
+
+[[area.evidence]]
+kind = "host"
+reference = "evidence/host-kernel-build-20261101.txt"
+result = "defconfig, fetch, status, tree and the full console kernel build complete on the host; nothing ran on the board"
+command = "source host/env.sh && cd UniXNU-orangepi5 && scripts/build-orangepi5-kernel.sh"
+revision = "f4bb6e952e915f4f837547f11981ca26b61a5c46"
+
+[[area]]
+id = "firmware"
+status = "planned"
+components = []
+paths = ["docs/bring-up.md"]
+inputs = ["edk2-rk3588 firmware built by uefi-orangepi5 (an SPI NOR image with TF-A at EL3, OP-TEE and the UEFI volume), UEFI GOP frame buffer on HDMI0."]
+configuration = ["board.toml has no [firmware] section: the unixnu firmware step builds Mu-Silicium, and this board boots edk2-rk3588 built by uefi-orangepi5.", "payload.loader = firmware: DarwinBoot is inside the firmware volume and reads the payload from the ESP of the NVMe drive, found through NvmExpressDxe."]
+procedure = ["Build the firmware in uefi-orangepi5 (build.sh); the SPI NOR image is written to the board's flash by a method that needs the board and is not recorded yet."]
+findings = ["The firmware builds on the host with the GPU rail set to 0.75 V and the hardware watchdog driver of uefi-orangepi5 armed (the board has no remote power switch, so a hung kernel must end in a watchdog reset).", "Not yet observed on the board: the UEFI banner, the DRAM size, the PCIe link of the NVMe drive and the GOP resolution."]
+completion = ["Firmware enters DarwinBoot, publishes the GOP frame buffer and finds the NVMe ESP."]
+limits = ["No hardware access so far: serial console, flashing method and the board's RAM size are open inputs."]
+next_action = ["Connect the board (UART2 at 1.5 Mbaud, HDMI, NVMe), write the NOR image and record the first firmware log."]
+
+[[area.evidence]]
+kind = "source"
+reference = "docs/bring-up.md"
+result = "Boot flow and milestones M0 to M4"
+
+[[area]]
+id = "cpu"
+status = "implemented"
+components = ["ArmCpu", "ArmDTPlatform"]
+paths = ["scripts/*armcpu*"]
+inputs = ["Four Cortex-A55 and four Cortex-A76 at affinities 0x000 to 0x700, GICv3 at 0xfe600000, 24 MHz architected timer, PSCI over SMC: the same cluster layout and GIC as the EVB10, since the RK3588S is the RK3588 without some interfaces."]
+configuration = ["The CPU, GIC and PSCI nodes come from the SoC dtsi (rk3588-common dts/rk3588.dtsi); the board DTS enables nothing extra.", "Kernel arguments sheng-smp=1, armcpu-self-ipi=1, armcpu-mmio-sgi=0 and cpumask=31 are the ones of the EVB10 port."]
+procedure = ["Compile dts/orangepi5.dts through ./unixnu tree and inspect /cpus, /psci and /arm-io/intc in the generated device tree.", "Boot and read the per-core entry lines on the serial console."]
+findings = ["The CPU path is shared with the EVB10 and unchanged here; the EVB10 record documents the EL2 to EL1 drop of secondary cores and the Darwin assembler caveat.", "Whether the Orange Pi 5 firmware leaves the same state is not yet observed."]
+completion = ["Every enabled core reaches its entry checkpoint and receives timer and inter-processor interrupts."]
+limits = ["No CPU frequency governor yet; the DVFS rail table of the EVB10 (RK8602 at I2C0 0x42 and 0x43, RK806 BUCK1 and BUCK2) matches the Orange Pi 5 and will be reused with the power area."]
+next_action = ["Boot the console kernel and compare the per-core lines with the EVB10 log."]
+
+[[area.evidence]]
+kind = "source"
+reference = "dts/orangepi5.dts"
+result = "Board device tree on top of the shared SoC description"
+
+[[area]]
+id = "memory"
+status = "planned"
+components = []
+paths = ["dts/orangepi5.dts"]
+inputs = ["Orange Pi 5 with 4, 8, 16 or 32 GiB of LPDDR4x; the RK3588 maps DRAM in two banks (below 0xf0000000 and from 0x100000000) around the peripheral window and the reserved regions of the firmware."]
+configuration = ["The memory node and payload.dram_size are placeholders for 4 GiB at 0x100000000; payload.adt.owned_memory_size = 0x80000000 takes 2 GiB from the UEFI memory map."]
+procedure = ["Read the memory map from the firmware log of the first run and replace both placeholders; keep the kernel's 2 GiB inside the bank the firmware reports as conventional memory."]
+findings = ["Not yet measured. The EVB10 port found that DarwinBoot takes contiguous memory from the UEFI memory map and that the shared-region and DRAM-carve-out sizes must agree with the ADT."]
+completion = ["The kernel reports the memory it owns and the ADT memory ranges match the firmware map."]
+limits = ["The RAM size of the user's board is unknown."]
+next_action = ["Capture the UEFI memory map on the board."]
+
+[[area.evidence]]
+kind = "source"
+reference = "dts/orangepi5.dts"
+result = "Placeholder memory node"
+
+[[area]]
+id = "storage"
+status = "planned"
+components = ["AppleKeyStoreState"]
+paths = ["package/Rk3588Nvme/**"]
+inputs = ["M.2 M-key slot on PCIe 2.0 x1 (pcie2x1l2 through combphy0_ps, reset GPIO3_D1, 3.3 V enable GPIO0_PC5), an NVMe drive for the ESP, the root image and the Data volume; the eMMC socket (dwcmshc, the controller of the EVB10 eMMC) and the microSD slot are left unused."]
+configuration = ["board.toml [userdata] describes a proposed layout: an ESP of 512 MiB at LBA 2048 and a 64 GiB userdata partition at LBA 1050624, with the OS and SystemOS windows. No drive has been written."]
+procedure = ["Write GPT, ESP (payload) and userdata to the drive with the board tools of uefi-orangepi5 once they exist; the NVMe block driver publishes the OS and SystemOS windows read-only and the Data window writable."]
+findings = ["The EVB10 eMMC driver (Rk3588Emmc) is the model for the NVMe driver: a polled admin queue and one I/O queue, windows declared in the root manifest, writes only inside the Data window.", "No driver exists yet; the PCIe controller and link state left by the firmware are not observed."]
+completion = ["The kernel mounts the root and Data volumes from the NVMe drive and launchd starts."]
+limits = ["Largest piece of work of this port; needs the board and a drive of known size."]
+next_action = ["Read the PCIe controller state and the NVMe controller registers from the firmware on the board, then write the driver."]
+
+[[area.evidence]]
+kind = "source"
+reference = "board.toml"
+result = "Proposed userdata layout and storage-related configuration"
+
+[[area]]
+id = "display"
+status = "planned"
+components = []
+paths = ["package/OrangePi5Display/**"]
+inputs = ["HDMI0 from VOP2 video port 0 (the EVB10 drives a panel through video port 2), UEFI GOP frame buffer, monitor mode chosen by EDID."]
+configuration = ["The first milestone uses the GOP frame buffer DarwinBoot publishes (component GopFramebuffer, offline-legacy-gop=1); a VOP2 scanout driver on the Esmart window of video port 0 follows for frame rate."]
+procedure = ["Boot the kernel with the GOP frame buffer and look at the monitor; then adapt the EVB10 VOP2 code to video port 0 and the monitor timing."]
+findings = ["The EVB10 VOP2 constants (evb10-vop, evb10-fb-w, evb10-fb-h, video port, window) are board specific; the Orange Pi 5 needs its own values."]
+completion = ["The kernel draws the boot screen on the HDMI monitor and SpringBoard appears."]
+limits = ["Not started; needs the board and a monitor."]
+next_action = ["Record the GOP mode and the VOP2 state left by the firmware."]
+
+[[area.evidence]]
+kind = "source"
+reference = "docs/bring-up.md"
+result = "Display milestones"
+
+[[area]]
+id = "input"
+status = "not-applicable"
+components = []
+paths = ["package/OrangePi5Input/**"]
+inputs = ["The first round is display only: no keyboard, mouse or touch device is attached."]
+configuration = ["No input driver is configured; xHCI on USB host 0 and 2 (and a HID class driver) join later."]
+procedure = ["None in this round."]
+findings = ["The Orange Pi 5 has no on-board input device; input means a USB keyboard or mouse through xHCI, which the EVB10 port does not cover (its touch controller sits on I2C)."]
+completion = ["Not applicable until USB input is requested."]
+limits = ["Out of scope of the current milestones."]
+next_action = ["Plan an xHCI and HID driver after the display works."]
+
+[[area.evidence]]
+kind = "source"
+reference = "docs/bring-up.md"
+result = "Input is deferred"
+
+[[area]]
+id = "gpu"
+status = "planned"
+components = []
+paths = ["package/Mali/**"]
+inputs = ["Mali-G610 at 0xfb000000, supply RK806 BUCK1 (vdd_gpu_s0), PanVK on Mesa and metal2vulkan from the EVB10 port."]
+configuration = ["Not in the kernel yet; the Mali driver submodule and the Metal stack of the EVB10 port are board independent apart from the rail table."]
+procedure = ["After the display scans out, enable the Mali archive and the composition path of the EVB10 and measure a frame."]
+findings = ["The EVB10 port reached about 15 ms per heavy command buffer with the GPU at 750 MHz; the Orange Pi 5 uses the same SoC and rail, so the same driver is expected to work."]
+completion = ["Mali composition runs on the Orange Pi 5."]
+limits = ["Not started."]
+next_action = ["Reuse package/Mali after the display milestone."]
+
+[[area.evidence]]
+kind = "source"
+reference = "docs/bring-up.md"
+result = "GPU milestone"
+
+[[area]]
+id = "network"
+status = "planned"
+components = []
+paths = ["package/OrangePi5Network/**"]
+inputs = ["GMAC1 with an RGMII PHY (gigabit Ethernet connector), the on-board Wi-Fi and Bluetooth module (not described in the mainline device tree, to be identified on the board), USB Ethernet."]
+configuration = ["Not configured. The firmware driver DwcEqosSnpDxe stays enabled in uefi-orangepi5 for later network boot."]
+procedure = ["None in the first rounds."]
+findings = ["Not started; the EVB10 Wi-Fi and Ethernet work does not apply directly."]
+completion = ["Out of the first milestones."]
+limits = ["No network in the first rounds."]
+next_action = ["Decide between GMAC1 and a USB Ethernet adapter once storage and display work."]
+
+[[area.evidence]]
+kind = "source"
+reference = "docs/bring-up.md"
+result = "Network is deferred"
+
+[[area]]
+id = "audio"
+status = "planned"
+components = []
+paths = ["package/OrangePi5Audio/**"]
+inputs = ["ES8388 codec on I2C6 at 0x10 with I2S1 (3.5 mm jack) and HDMI audio on I2S5."]
+configuration = ["Not configured."]
+procedure = ["None in the first rounds."]
+findings = ["The EVB10 audio driver targets another codec; only the I2S controller part is shared."]
+completion = ["Out of the first milestones."]
+limits = ["No audio in the first rounds."]
+next_action = ["Port the I2S path after the display works."]
+
+[[area.evidence]]
+kind = "source"
+reference = "docs/bring-up.md"
+result = "Audio is deferred"
+
+[[area]]
+id = "power"
+status = "planned"
+components = []
+paths = ["package/OrangePi5Power/**"]
+inputs = ["RK806 PMIC on SPI (BUCK1 GPU, BUCK2 little cores), RK8602 and RK8603 at 0x42 and 0x43 on I2C0 for the big cores, HYM8563 RTC at I2C6 0x51, a PWM fan header, no remote power switch."]
+configuration = ["The firmware initialises the rails; the GPU rail is set to 0.75 V at build time (GPU_RAIL_UV in uefi-orangepi5). The kernel keeps the hardware watchdog fed with wdt-kick=1800."]
+procedure = ["Run the kernel and read the watchdog behaviour on the serial console; CPU and GPU frequency management reuse the EVB10 DVFS tables once the probe hook exists."]
+findings = ["The board has no reset controller: a hung kernel ends in the watchdog reset (about 89 seconds without wdt-kick), a hung firmware needs a manual power cycle.", "Not yet observed on the board."]
+completion = ["The kernel runs for minutes without a reset and the frequencies follow the load."]
+limits = ["The DVFS probe of the EVB10 is started from its display probe; the Orange Pi 5 needs its own start hook."]
+next_action = ["Observe the first boot, then enable DVFS."]
+
+[[area.evidence]]
+kind = "source"
+reference = "board.toml"
+result = "wdt-kick and the firmware watchdog hand-off"
+
+[[area]]
+id = "packaging"
+status = "implemented"
+components = ["XnuPrelink", "DarwinBoot", "SoftwareAES"]
+paths = ["patches/**", "package/**"]
+inputs = ["Console kernel from orangepi5_defconfig, trust caches and unixnu.toml of the payload, the 256 MiB OPI5ESP payload volume that goes on the NVMe ESP."]
+configuration = ["payload.loader = firmware: the loader is part of the firmware volume of uefi-orangepi5, so the payload carries no loader image."]
+procedure = ["unixnu build kernel, then unixnu build payload; copy the payload to the ESP of the NVMe drive."]
+findings = ["The SoC patch rk3588-root-trust.patch makes bsd_init.c call native_emmc_root_trusted, which only the EVB10 eMMC driver defines, so the first link of the console kernel failed with an undefined symbol until the weak stub patch was added.", "The console kernel builds on the host; the payload has not been assembled because the ADT placeholders (RAM size) are open.", "The SoC repository is pinned in feeds.toml; local.toml can point at a checkout during development."]
+completion = ["The payload boots from the NVMe ESP through the firmware and reaches the kernel entry."]
+limits = ["One board patch so far (patches/xnu/orangepi5-root-trust-stub.patch): a weak native_emmc_root_trusted that answers no, because the SoC patch rk3588-root-trust.patch references the storage driver of the EVB10; the NVMe driver replaces it."]
+next_action = ["Assemble the payload once the memory map is known."]
+
+[[area.evidence]]
+kind = "source"
+reference = "scripts/build-orangepi5-kernel.sh"
+result = "Kernel build driver"
+
+[[area.evidence]]
+kind = "host"
+reference = "evidence/host-kernel-build-20261101.txt"
+result = "The kernel links to a 51019776-byte arm64 Mach-O executable with the board patch series applied; the payload is not assembled yet"
+command = "source host/env.sh && cd UniXNU-orangepi5 && scripts/build-orangepi5-kernel.sh"
+revision = "f4bb6e952e915f4f837547f11981ca26b61a5c46"
+
+[[area]]
+id = "diagnostics"
+status = "planned"
+components = []
+paths = ["README.md", "AGENTS.md", "docs/**"]
+inputs = ["UART2 on the 3-pin debug header at 1.5 Mbaud 8N1; the firmware prints its own log on the same port."]
+configuration = ["serial=3 and debug=0x10014e keep the kernel console on UART2 and restart after a panic."]
+procedure = ["Attach a 3.3 V USB serial adapter to the debug header and capture from power-on."]
+findings = ["The serial adapter is not attached to any machine yet; the first observation of this port is still to come."]
+completion = ["A boot log from the board is stored with the evidence."]
+limits = ["No board access so far."]
+next_action = ["Capture the first UEFI and kernel log."]
+
+[[area.evidence]]
+kind = "source"
+reference = "README.md"
+result = "Repository overview and status"
