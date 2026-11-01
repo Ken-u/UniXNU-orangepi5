@@ -4,7 +4,7 @@ schema_version = 1
 name = "orangepi5"
 soc = "RK3588"
 os_profile = "ipados-17.7.11-21H461"
-summary = "Orange Pi 5 (Rockchip RK3588S) with an HDMI display and an M.2 NVMe drive, planned to run the iPadOS 17.7.11 userland on a source-built XNU, started from edk2-rk3588 firmware (uefi-orangepi5). Shared SoC support is in UniXNU-rk3588-common, which the EVB10 port already proved on hardware. Nothing in this repository has run on an Orange Pi 5 yet: the configuration resolves and the console kernel builds on the host, every area below records what is still to be measured."
+summary = "Orange Pi 5 (Rockchip RK3588S) with an HDMI display and an M.2 NVMe drive, planned to run the iPadOS 17.7.11 userland on a source-built XNU, started from edk2-rk3588 firmware (uefi-orangepi5). Shared SoC support is in UniXNU-rk3588-common, which the EVB10 port already proved on hardware. Nothing in this repository has run on an Orange Pi 5 yet: the configuration resolves, the kernel with the NVMe driver builds and links, and the payload and the NVMe image are assembled and checked on the host; every area below records what is still to be measured."
 
 [[area]]
 id = "configuration"
@@ -12,17 +12,24 @@ status = "host-verified"
 components = []
 paths = ["board.toml", "feeds.toml", "configs/**", ".github/**", ".gitignore", ".env.example", "local.toml.example", "unixnu.lock", "LICENSE", ".gitattributes", "scripts/build-orangepi5-kernel.sh"]
 inputs = ["ARM64 profile, rk3588 SoC source pinned in feeds.toml, iPadOS 17.7.11 build 21H461 profile, orangepi5_defconfig."]
-configuration = ["board.soc_source = rk3588; board.os_profile = ipados-17.7.11-21H461; schema_version = 2.", "orangepi5_defconfig keeps the console kernel: no display, no GPU, no RAM disk, no UFS; the trust-cache runtime and the code-signing hash cache stay on.", "[adt.defaults.u32] carries sleep-disabled = 1 and vmm-present = 1, which the EVB10 port found necessary for watchdogd."]
+configuration = ["board.soc_source = rk3588; board.os_profile = ipados-17.7.11-21H461; schema_version = 2.", "orangepi5_defconfig keeps the console kernel with NVMe storage: no display, no GPU, no RAM disk, no UFS; the trust-cache runtime and the code-signing hash cache stay on.", "[adt.defaults.u32] carries sleep-disabled = 1 and vmm-present = 1, which the EVB10 port found necessary for watchdogd."]
 procedure = ["From the UniXNU checkout run ./unixnu defconfig orangepi5_defconfig -D ../UniXNU-orangepi5, then ./unixnu fetch, ./unixnu status --json and ./unixnu tree with the same -D.", "scripts/build-orangepi5-kernel.sh runs the kernel build; it needs the environment of the machine that builds (.env) and CMake 3.19.6 or newer."]
-findings = ["Resolution is host-verified: defconfig, fetch, status --json and tree complete against the pinned SoC repository.", "The UniXNU bootstrap pass builds AvailabilityVersions with CMake; the distribution CMake of Ubuntu 20.04 is 3.16 and fails, so the build script puts /usr/local/bin first."]
+findings = ["Resolution is host-verified: defconfig, fetch, status --json and tree complete against the pinned SoC repository.", "The UniXNU bootstrap pass builds AvailabilityVersions with CMake; the distribution CMake of Ubuntu 20.04 is 3.16 and fails, so the build script puts /usr/local/bin first.", "The kernel now carries the NVMe driver: board.toml archives build-orangepi5-drivers.py Rk3588Nvme and bind-nvme-storage.py, the defconfig force-loads libRk3588Nvme.a, and the build script verifies the bound addresses against the kernel (18 addresses inside the audited IOStorageFamily).", "board.toml [userdata] is the layout of the 128 GB drive: userdata at LBA 526336..134744063 behind a 256 MiB ESP at LBA 2048; the boot arguments are the EVB10 ones with the storage names of the NVMe driver (nvme=4, nvme-root-trust=1, nvme-data-size=2048, nvme-data-persist=1)."]
 completion = ["Every source pin resolves, ./unixnu status lists the intended patch order, and the defconfig materialises."]
 limits = ["The kernel configuration is the console minimum; storage, display, GPU and input join it as those drivers exist (docs/bring-up.md)."]
-next_action = ["Add the NVMe driver archive and the display archive to board.toml when the drivers exist."]
+next_action = ["Add the display archive to board.toml when the display driver exists."]
 
 [[area.evidence]]
 kind = "source"
 reference = "board.toml"
 result = "Board configuration of the console kernel"
+
+[[area.evidence]]
+kind = "host"
+reference = "evidence/host-nvme-storage-20261101.txt"
+result = "The kernel with the NVMe driver links and the bound-address check passes (51154944 bytes, sha256 76ba878c...); nothing ran on the board"
+command = "source host/env.sh && cd UniXNU-orangepi5 && scripts/build-orangepi5-kernel.sh"
+revision = "5cbaf4236c5f0a850a62daa341b1195956b4a63f"
 
 [[area.evidence]]
 kind = "host"
@@ -38,8 +45,8 @@ components = []
 paths = ["docs/bring-up.md"]
 inputs = ["edk2-rk3588 firmware built by uefi-orangepi5 (an SPI NOR image with TF-A at EL3, OP-TEE and the UEFI volume), UEFI GOP frame buffer on HDMI0."]
 configuration = ["board.toml has no [firmware] section: the unixnu firmware step builds Mu-Silicium, and this board boots edk2-rk3588 built by uefi-orangepi5.", "payload.loader = firmware: DarwinBoot is inside the firmware volume and reads the payload from the ESP of the NVMe drive, found through NvmExpressDxe."]
-procedure = ["Build the firmware in uefi-orangepi5 (build.sh); the SPI NOR image is written to the board's flash by a method that needs the board and is not recorded yet."]
-findings = ["The firmware builds on the host with the GPU rail set to 0.75 V and the hardware watchdog driver of uefi-orangepi5 armed (the board has no remote power switch, so a hung kernel must end in a watchdog reset).", "Not yet observed on the board: the UEFI banner, the DRAM size, the PCIe link of the NVMe drive and the GOP resolution."]
+procedure = ["Build the firmware in uefi-orangepi5 (build.sh); tools/board/spi-flash.sh of that repository writes the SPI NOR image from a Linux booted on the board (backup first, flashcp, compare), or Maskrom mode when /proc/mtd does not list the flash. Both are described in uefi-orangepi5/docs/first-boot.md."]
+findings = ["The firmware builds on the host with the GPU rail set to 0.75 V and the hardware watchdog driver of uefi-orangepi5 armed (the board has no remote power switch, so a hung kernel must end in a watchdog reset).", "Not yet observed on the board: the UEFI banner, the DRAM size, the PCIe link of the NVMe drive and the GOP resolution.", "The firmware image is a bundle member (nor.img) built by uefi-orangepi5 tools/board/make-bundle.sh; spi-flash.sh was checked for its /proc/mtd parsing only, it has not touched a flash."]
 completion = ["Firmware enters DarwinBoot, publishes the GOP frame buffer and finds the NVMe ESP."]
 limits = ["No hardware access so far: serial console, flashing method and the board's RAM size are open inputs."]
 next_action = ["Connect the board (UART2 at 1.5 Mbaud, HDMI, NVMe), write the NOR image and record the first firmware log."]
@@ -72,12 +79,12 @@ id = "memory"
 status = "planned"
 components = []
 paths = ["dts/orangepi5.dts"]
-inputs = ["Orange Pi 5 with 4, 8, 16 or 32 GiB of LPDDR4x; the RK3588 maps DRAM in two banks (below 0xf0000000 and from 0x100000000) around the peripheral window and the reserved regions of the firmware."]
+inputs = ["The board of this port has 8 GiB of LPDDR4x; the RK3588 maps DRAM in two banks (below 0xf0000000, 3.75 GiB, and from 0x100000000, 4.25 GiB) around the peripheral window and the reserved regions of the firmware."]
 configuration = ["The memory node and payload.dram_size are placeholders for 4 GiB at 0x100000000; payload.adt.owned_memory_size = 0x80000000 takes 2 GiB from the UEFI memory map."]
 procedure = ["Read the memory map from the firmware log of the first run and replace both placeholders; keep the kernel's 2 GiB inside the bank the firmware reports as conventional memory."]
-findings = ["Not yet measured. The EVB10 port found that DarwinBoot takes contiguous memory from the UEFI memory map and that the shared-region and DRAM-carve-out sizes must agree with the ADT."]
+findings = ["The 4 GiB node at 0x100000000 lies inside the upper bank of an 8 GiB board; it is the value of the EVB10 port, not yet compared with this board's memory map. The NVMe driver does not depend on where DarwinBoot puts the kernel's pages: its DMA window accepts any address below 1 TiB.", "Not yet measured. The EVB10 port found that DarwinBoot takes contiguous memory from the UEFI memory map and that the shared-region and DRAM-carve-out sizes must agree with the ADT."]
 completion = ["The kernel reports the memory it owns and the ADT memory ranges match the firmware map."]
-limits = ["The RAM size of the user's board is unknown."]
+limits = ["Where DarwinBoot places the 2 GiB of kernel pages is known only from the first firmware log."]
 next_action = ["Capture the UEFI memory map on the board."]
 
 [[area.evidence]]
@@ -87,21 +94,28 @@ result = "Placeholder memory node"
 
 [[area]]
 id = "storage"
-status = "planned"
+status = "host-verified"
 components = ["AppleKeyStoreState"]
-paths = ["package/Rk3588Nvme/**"]
-inputs = ["M.2 M-key slot on PCIe 2.0 x1 (pcie2x1l2 through combphy0_ps, reset GPIO3_D1, 3.3 V enable GPIO0_PC5), an NVMe drive for the ESP, the root image and the Data volume; the eMMC socket (dwcmshc, the controller of the EVB10 eMMC) and the microSD slot are left unused."]
-configuration = ["board.toml [userdata] describes a proposed layout: an ESP of 512 MiB at LBA 2048 and a 64 GiB userdata partition at LBA 1050624, with the OS and SystemOS windows. No drive has been written."]
-procedure = ["Write GPT, ESP (payload) and userdata to the drive with the board tools of uefi-orangepi5 once they exist; the NVMe block driver publishes the OS and SystemOS windows read-only and the Data window writable."]
-findings = ["The EVB10 eMMC driver (Rk3588Emmc) is the model for the NVMe driver: a polled admin queue and one I/O queue, windows declared in the root manifest, writes only inside the Data window.", "No driver exists yet; the PCIe controller and link state left by the firmware are not observed."]
+paths = ["package/Rk3588Nvme/**", "scripts/build-orangepi5-drivers.py", "scripts/bind-nvme-storage.py", "scripts/check-vendored-patches.sh", "scripts/data/**", "dts/orangepi5.dts"]
+inputs = ["M.2 M-key slot on PCIe 2.0 x1 (pcie2x1l2 through combphy0_ps, reset GPIO3_D1, 3.3 V enable GPIO0_PC5), a 128 GB NVMe drive for the ESP, the root image and the Data volume; the eMMC socket and the microSD slot are left unused."]
+configuration = ["board.toml [userdata]: an ESP of 256 MiB at LBA 2048 and a 64 GiB userdata partition at LBA 526336..134744063, with the OS and SystemOS windows at its start and the Data window (1 MiB header + 2 GiB container) at its end.", "dts/orangepi5.dts exports /arm-io/pcie-nvme (compatible unixnu,rk3588-pcie-nvme, no reg, no interrupts) and keeps the pcie@fe190000 node disabled; patches/xnu/orangepi5-nvme-personality.patch matches NativeNvme to it.", "Boot arguments nvme=4, nvme-root-trust=1, nvme-data-size=2048, nvme-data-persist=1; probe-only runs use nvme=1."]
+procedure = ["Write GPT, ESP (payload) and userdata to the drive with uefi-orangepi5 tools/board/nvme-install.py from a Linux booted on the board, then boot; the driver publishes the OS and SystemOS windows read-only and the Data window writable."]
+findings = ["package/Rk3588Nvme follows the EVB10 eMMC driver above the controller (GPT scan, SHNGROOT root image, Data window, kernel hooks, watchdog feeder, PMGR nub) and has its own host: PCIe bring-up from the state edk2-rk3588 leaves, a polled NVMe controller core (reset, admin queue, identify, one I/O queue pair, PRP transfers through a contiguous bounce window, writes only inside the Data window).", "Host-verified: the NVMe core and the GPT reader against a controller model behind a non-coherent cache (seven mutations of the core are caught), the root manifest reader, the driver compiled with -Werror and bound to the original IOBlockStorageDevice (190 slots, 11 imports), the kernel link and its bound-address check, and the installer's GPT through the driver's own reader.", "Not observed on the board: the PCIe controller addresses (APB 0xfe190000, DBI 0xa41000000, CFG0 0xa36500000, the BAR windows) are derived from the sources of edk2-rk3588, the controller state the firmware leaves, the drive's BAR placement, its model and LBA format, and DMA coherence of the bounce window.", "The kernel patches of the EVB10 call two Mali hooks (mali_gpu_addon, mali_test_file); the driver defines weak versions that answer none until a display archive is linked.", "Design debts: the storage code is duplicated between Rk3588Emmc and Rk3588Nvme (a fix to the shared parts goes into both); the headers Gpt.h, RootManifest.h and StorageCommon.h are copies with the namespace renamed; the first round keeps the 2 GiB Data container of the existing seed."]
 completion = ["The kernel mounts the root and Data volumes from the NVMe drive and launchd starts."]
-limits = ["Largest piece of work of this port; needs the board and a drive of known size."]
-next_action = ["Read the PCIe controller state and the NVMe controller registers from the firmware on the board, then write the driver."]
+limits = ["Nothing in this area has run on the board; the first log decides whether the derived addresses and the cache handling hold.", "Only 512-byte logical blocks are supported."]
+next_action = ["Boot with nvme=1 first and read the pcie:, NVMe and probe lines, then nvme=4 for the root volume (uefi-orangepi5/docs/first-boot.md)."]
 
 [[area.evidence]]
 kind = "source"
-reference = "board.toml"
-result = "Proposed userdata layout and storage-related configuration"
+reference = "package/Rk3588Nvme/README.md"
+result = "Driver structure, host checks and the list of unverified hardware assumptions"
+
+[[area.evidence]]
+kind = "host"
+reference = "evidence/host-nvme-storage-20261101.txt"
+result = "Host tests, -Werror build, vtable binding, kernel link, payload and a full install of the NVMe image into a 128 GB sparse file with read-back; nothing ran on the board"
+command = "g++ -std=c++17 -Wall -Wextra -Werror -O1 -I package/Rk3588Nvme package/Rk3588Nvme/tests/test-nvme-host.cpp -o /tmp/test-nvme-host && /tmp/test-nvme-host"
+revision = "5cbaf4236c5f0a850a62daa341b1195956b4a63f"
 
 [[area]]
 id = "display"
@@ -213,16 +227,16 @@ result = "wdt-kick and the firmware watchdog hand-off"
 
 [[area]]
 id = "packaging"
-status = "implemented"
+status = "host-verified"
 components = ["XnuPrelink", "DarwinBoot", "SoftwareAES"]
 paths = ["patches/**", "package/**"]
-inputs = ["Console kernel from orangepi5_defconfig, trust caches and unixnu.toml of the payload, the 256 MiB OPI5ESP payload volume that goes on the NVMe ESP."]
+inputs = ["Kernel from orangepi5_defconfig with the NVMe driver, the original trust cache bundle, the 2 GiB Data seed and unixnu.toml of the payload, the 256 MiB OPI5ESP payload volume that goes on the NVMe ESP, the 9.4 GB root image."]
 configuration = ["payload.loader = firmware: the loader is part of the firmware volume of uefi-orangepi5, so the payload carries no loader image."]
-procedure = ["unixnu build kernel, then unixnu build payload; copy the payload to the ESP of the NVMe drive."]
-findings = ["The SoC patch rk3588-root-trust.patch makes bsd_init.c call native_emmc_root_trusted, which only the EVB10 eMMC driver defines, so the first link of the console kernel failed with an undefined symbol until the weak stub patch was added.", "The console kernel builds on the host; the payload has not been assembled because the ADT placeholders (RAM size) are open.", "The SoC repository is pinned in feeds.toml; local.toml can point at a checkout during development."]
+procedure = ["unixnu build kernel, then uefi-orangepi5 tools/board/make-bundle.sh (unixnu build payload, the power-off menu entry removed, bundle with the firmware image and the root image); nvme-install.py writes the ESP of the drive."]
+findings = ["The SoC patch rk3588-root-trust.patch makes bsd_init.c call native_emmc_root_trusted; the NVMe driver defines it, so the stub patch of the console kernel is gone.", "The five EVB10 kernel patches (exit trace, mmap grant, thread sample, userland mounts, vc mirror) are vendored with their source commit; the NVMe personality patch is the board's own.", "The payload assembles on the host (payload.img 256 MiB, ADT with the pcie-nvme node); the ADT memory values are still the placeholders.", "The SoC repository is pinned in feeds.toml; local.toml can point at a checkout during development."]
 completion = ["The payload boots from the NVMe ESP through the firmware and reaches the kernel entry."]
-limits = ["One board patch so far (patches/xnu/orangepi5-root-trust-stub.patch): a weak native_emmc_root_trusted that answers no, because the SoC patch rk3588-root-trust.patch references the storage driver of the EVB10; the NVMe driver replaces it."]
-next_action = ["Assemble the payload once the memory map is known."]
+limits = ["The vendored EVB10 patches keep the EVB10 names and drift when the EVB10 repository changes (scripts/check-vendored-patches.sh shows it).", "The payload has not been started by the firmware."]
+next_action = ["Start the payload on the board and replace the memory placeholders with the first log."]
 
 [[area.evidence]]
 kind = "source"
@@ -231,8 +245,15 @@ result = "Kernel build driver"
 
 [[area.evidence]]
 kind = "host"
+reference = "evidence/host-nvme-storage-20261101.txt"
+result = "The payload assembles (256 MiB FAT volume with kernel, ADT, trust cache and Data seed) and the bundle installs into a 128 GB image with read-back; the board has not started it"
+command = "cd UniXNU && host/in-ns.sh ./unixnu build payload -D ../UniXNU-orangepi5 --unique-chip-id ID --trust-cache original-static-system.bundle --data-ramdisk owner-data-2048.trim.img"
+revision = "5cbaf4236c5f0a850a62daa341b1195956b4a63f"
+
+[[area.evidence]]
+kind = "host"
 reference = "evidence/host-kernel-build-20261101.txt"
-result = "The kernel links to a 51019776-byte arm64 Mach-O executable with the board patch series applied; the payload is not assembled yet"
+result = "The console kernel linked to a 51019776-byte arm64 Mach-O executable with the first board patch series (superseded by the NVMe kernel above)"
 command = "source host/env.sh && cd UniXNU-orangepi5 && scripts/build-orangepi5-kernel.sh"
 revision = "f4bb6e952e915f4f837547f11981ca26b61a5c46"
 
@@ -240,14 +261,14 @@ revision = "f4bb6e952e915f4f837547f11981ca26b61a5c46"
 id = "diagnostics"
 status = "planned"
 components = []
-paths = ["README.md", "AGENTS.md", "docs/**"]
+paths = ["README.md", "AGENTS.md", "docs/**", "evidence/**"]
 inputs = ["UART2 on the 3-pin debug header at 1.5 Mbaud 8N1; the firmware prints its own log on the same port."]
 configuration = ["serial=3 and debug=0x10014e keep the kernel console on UART2 and restart after a panic."]
 procedure = ["Attach a 3.3 V USB serial adapter to the debug header and capture from power-on."]
-findings = ["The serial adapter is not attached to any machine yet; the first observation of this port is still to come."]
+findings = ["The serial adapter is not attached to any machine yet; the first observation of this port is still to come.", "uefi-orangepi5 tools/board/capture.sh records the port with times (serial-capture.py of the SoC repository); docs/first-boot.md of that repository lists the log lines that settle each step (firmware, PCIe, NVMe, GPT, root, Data, userland) and what each failure means.", "The driver prints the PCIe link state, the capability list, the controller registers as the firmware left them and the NVMe identify data, so the first log should show which of the derived hardware assumptions is wrong."]
 completion = ["A boot log from the board is stored with the evidence."]
 limits = ["No board access so far."]
-next_action = ["Capture the first UEFI and kernel log."]
+next_action = ["Capture the first UEFI and kernel log (runs/m0.ts) and compare it with the table of first-boot.md."]
 
 [[area.evidence]]
 kind = "source"

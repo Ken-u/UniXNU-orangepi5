@@ -22,6 +22,9 @@ Rules specific to this repository:
 - Update `porting.toml` findings or evidence in the same change as the code. Record `host-verified` or
   `device-verified` only with a command, a full commit and an accessible log. Nothing here is device-verified yet.
 - The board has no remote power switch. A change that can hang the firmware needs the user to pull power.
+- `patches/xnu/evb10-*.patch` are copies of the EVB10 patches (`patches/xnu/VENDORED.md` names the commit). Fix them in
+  `UniXNU-evb10` first and copy; `scripts/check-vendored-patches.sh` shows the drift.
+- `package/Rk3588Nvme` follows `Rk3588Emmc` (see its `AGENTS.md`). Run its host tests before every commit that touches it.
 
 Run builds from the UniXNU checkout:
 

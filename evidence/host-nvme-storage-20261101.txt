@@ -1,0 +1,43 @@
+Host verification of the Orange Pi 5 NVMe storage path (nothing of this ran on the board).
+
+Machine: build host, Ubuntu 20.04, no root (user namespace wrapper), g++ 9, Python 3.8 and 3.12.
+Device repository revision: 2e2f0331cc28ed24367c131c45b9a638cf254ade (driver, scripts, patches; the tests below are at 236a6a8)
+UniXNU: 066c8d8 (pinned), SoC repository: Ken-u/UniXNU-rk3588-common 9c74681ab5a2e7378197ed8f451b4cafed80dd99
+EVB10 patches vendored from Ken-u/UniXNU-evb10 37befa9162d6b4b080cb63a95cccff0ebb4d34f5 (scripts/check-vendored-patches.sh: all five "same")
+
+1. Driver host tests (package/Rk3588Nvme, see its README):
+     g++ -std=c++17 -Wall -Wextra -Werror -O1 -I . tests/test-nvme-host.cpp -o /tmp/test-nvme-host && /tmp/test-nvme-host
+       -> all NVMe host checks passed
+     g++ -std=c++17 -Wall -Wextra -Werror -O1 -I . tests/test-root-manifest.cpp -o /tmp/test-root-manifest && /tmp/test-root-manifest
+       -> test-root-manifest: ok
+   The first runs NvmeHost.h and Gpt.h against a model of an NVMe controller that enforces the reset order, doorbells, the DMA window, PRP
+   alignment, phase bits, queue ids, the completion-queue head doorbell and the write range, behind a non-coherent cache model.
+   Seven mutations of NvmeHost.h are each caught (9 to 235 failed checks): no controller reset, the phase bit ignored, the phase not
+   flipped on wrap, no flush before reading the data, no flush before polling a completion, no head doorbell, writes allowed outside the
+   range, and the range off by one block. The head-doorbell mutation survived the first version of the model; the model now stalls a
+   full completion queue (commit 5cbaf4236c5f0a850a62daa341b1195956b4a63f).
+
+2. Kernel build (source host/env.sh && cd UniXNU-orangepi5 && scripts/build-orangepi5-kernel.sh):
+     Rk3588Nvme: -Werror build and ARM64/iOS 17 object audit passed
+     NativeNvmeBlock: 190 slots, 23 own methods, 11 original imports bound -> build/rk3588-nvme/libRk3588Nvme.a
+     PASS: the kernel carries the audited original IOStorageFamily (f18b4df865405f2a), 18 bound addresses inside it
+     kernel.macho: 51154944 bytes, sha256 76ba878cf8bc097e584ab2e66c2c309529cc14a3709f3d38b2092bac4b06896f
+   The first link failed on _mali_gpu_addon and _mali_test_file (called by the vendored evb10-userland-mounts patch, defined by the EVB10's
+   Mali driver); the driver now defines weak versions that answer "none", which that patch handles.
+   The kernel was built before the comment-only change to dts/orangepi5.dts; the kernel does not read the device tree.
+
+3. Payload (cd UniXNU && host/in-ns.sh ./unixnu build payload -D ../UniXNU-orangepi5 --unique-chip-id ... --trust-cache
+   original-static-system.bundle --data-ramdisk owner-data-2048.trim.img): payload.img 268435456 bytes, FAT volume OPI5ESP with
+   EFI/UniXNU/unixnu.toml and Payloads/{kernel.macho, kernel.macho.adt, kernel.macho.trustcache, scratch-data.img}; the toml's
+   power-off entry is removed by uefi-orangepi5/tools/board/patch-payload-toml.py. The ADT (kernel.macho.adt) carries
+   /arm-io/pcie-nvme with compatible unixnu,rk3588-pcie-nvme and no reg and no interrupts properties.
+
+4. NVMe image (uefi-orangepi5 5d97892, tools/board):
+     nvme-install.py --selftest: ok on Python 3.8 and 3.12; five mutations (header CRC, usable range, backup position, block-size check,
+     old-table wipe) are each caught by it.
+     Full install of the bundle (esp.img 256 MiB, userdata-root.img 9382658048 bytes sha256 fd43ee70...3093) into a 128 GB sparse file with
+     the sector count of a 128 GB drive (250069680), read back with O_DIRECT: "OK: gpt, esp, root, data verified"; the FAT volume lists with
+     mtools at offset 1 MiB, the root manifest magic SHNGROOT is at LBA 526336.
+     GPT read with the driver's own reader (tests/check-gpt-image.cpp): header CRC ok, entry CRC ok, esp 2048..526335, userdata
+     526336..134744063; fdisk -l and sfdisk --verify: no errors.
+   The Data window computed from the layout (container 2048 MiB) is LBA 130547712..134744063, 54539 MiB behind the end of the root image.
