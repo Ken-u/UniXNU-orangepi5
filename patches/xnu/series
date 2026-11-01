@@ -1,0 +1,2 @@
+# Series of the Orange Pi 5 board patches, applied after the ARM64, SoC and OS series.
+orangepi5-root-trust-stub.patch

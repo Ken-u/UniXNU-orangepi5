@@ -1,0 +1,21 @@
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -241,6 +241,18 @@
+ LCK_MTX_DECLARE(hostname_lock, &hostname_lck_grp);
+ LCK_MTX_DECLARE(domainname_lock, &hostname_lck_grp);
+ 
++/*
++ * The SoC patch rk3588-root-trust.patch asks the storage driver whether the root volume is the owner's image.
++ * The Orange Pi 5 has no such driver yet (the NVMe one is still to be written), so the console kernel answers no
++ * and the root volume would be authenticated the normal way. The driver's strong definition replaces this one.
++ */
++__attribute__((weak)) int
++native_emmc_root_trusted(dev_t dev)
++{
++	(void)dev;
++	return 0;
++}
++
+ dev_t   rootdev;                /* device of the root */
+ dev_t   dumpdev;                /* device to take dumps on */
+ long    dumplo;                 /* offset into dumpdev */

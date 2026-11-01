@@ -1,0 +1,26 @@
+# Kernel configuration of the Orange Pi 5 image, applied after the ARM64, SoC and OS fragments
+# (board.toml [kernel] config_fragments). CONFIG_XNU_<NAME> becomes XNU_<NAME> in the kernel build;
+# y and n become 1 and 0, {tree} in a string becomes the build tree.
+#
+# Console configuration for the first bring-up steps: no storage, display, GPU or input driver yet.
+
+# --- what the ARM64 and OS profiles enable that this board does not use ------------------------------
+CONFIG_XNU_NATIVE_ADRENO=n
+CONFIG_XNU_SOURCE_MOCKFS=n
+CONFIG_XNU_NATIVE_MOBILE_DISPLAY=n
+CONFIG_XNU_NATIVE_LEGACY_DISPLAY=n
+CONFIG_XNU_ARMVIRT_PLATFORM=n
+# UFS: the board has an NVMe drive (PCIe) and an eMMC socket, not UFS. VirtIO and the RAM block device are QEMU fixtures.
+CONFIG_XNU_NATIVE_UFS=n
+CONFIG_XNU_NATIVE_VIRTIO_BLOCK=n
+CONFIG_XNU_NATIVE_RAM_BLOCK=n
+CONFIG_XNU_NATIVE_VIRTIO_CONSOLE=n
+
+# --- kernel facilities the port expects ----------------------------------------------------------------
+# 4 KiB signature hashes derived from verified 16 KiB blocks; no archive, no hardware assumption.
+CONFIG_XNU_NATIVE_CS_HASH_CACHE=y
+# The trust-cache runtime: without it the lock stays zeroed (a non-sleepable lck_rw_t) and the first
+# query from AMFI for the cdhash of /sbin/launchd panics. The two trust caches of the IPSW reach it through the payload.
+CONFIG_XNU_TRUST_CACHE_RUNTIME=y
+# Read a panic region from /chosen when the tree carries one. The generator does not emit one.
+CONFIG_XNU_DT_PANIC_REGION=n

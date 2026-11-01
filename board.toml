@@ -1,0 +1,106 @@
+schema_version = 2
+
+[board]
+name = "orangepi5"
+soc = "RK3588"
+description = "Orange Pi 5 (Rockchip RK3588S)"
+kit = "orangepi5"
+soc_source = "rk3588"
+os_profile = "ipados-17.7.11-21H461"
+
+# The raw image `unixnu build userdata` writes for the `userdata` partition of the NVMe drive in the M.2 slot: a manifest,
+# the OS image and the SystemOS cryptex image of the IPSW. PROPOSED layout, not written to any drive yet: GPT, an ESP of
+# 512 MiB (LBA 2048 to 1050623, the payload: kernel, trust caches, unixnu.toml) and `userdata` right behind it, 64 GiB.
+# The block driver that publishes the windows (the NVMe counterpart of Rk3588Emmc) does not exist yet.
+[userdata]
+first_lba = 1050624
+last_lba = 135268351
+lba_bytes = 512
+windows = [
+  { name = "OS", component = "OS" },
+  { name = "SystemOS", component = "Cryptex1,SystemOS" },
+]
+
+[kernel]
+defconfig = "orangepi5_defconfig"
+config_fragments = ["arch:configs/common.config", "soc:configs/rk3588.config", "os:configs/ipados.config"]
+patch_series = ["arch:patches/xnu/series", "soc:patches/xnu/series", "os:patches/xnu/series", "device:patches/xnu/series"]
+# Archive builders of the kernel step, in order. `component:<ID>` entries build a catalog driver; the others
+# are scripts of the build tree (this repository's scripts/ and the SoC's).
+archives = [
+  "build-libpthread-kernel.py",
+  "build-corecrypto-14.py",
+  "build-corecrypto-14.py --namespace",
+  "component:ArmDTPlatform",
+  # ArmCpu has no patch channel: the SoC's script applies its RK3588 fixes to the checkout first.
+  "apply-armcpu-patches.py",
+  "component:ArmCpu",
+  "component:AppleKeyStoreState",
+  # IOAESAccelerator, which the original AppleImage4 waits for while it starts on /defaults.
+  "component:SoftwareAES",
+  "build-software-aes-bindings.py",
+]
+
+[payload]
+volume = "OPI5ESP"
+# The payload is the ESP of the NVMe drive (BootWdt and the UniXNU modules are in the firmware volume, loader = "firmware"),
+# so it is not limited by a boot image: the proposed ESP above is 512 MiB.
+size_mib = 256
+loader = "firmware"
+title = "UniXNU Orange Pi 5"
+# Placeholder: the board's RAM size is read from the firmware log of the first run (4, 8, 16 or 32 GiB).
+dram_size = "0x100000000"
+panic_screen = false
+
+# Boot arguments. Groups:
+#   console    -v verbose; serial=3 UART only (UART2 at 1.5 Mbaud, the 3-pin debug header);
+#              debug=0x10014e lifts the serial-output lock and restarts after a panic instead of parking in KDP;
+#              -enable_kprintf_spam makes this DEVELOPMENT kernel print early kprintf lines.
+#   cpu        sheng-smp=1 starts the secondary cores (ArmCpu); armcpu-self-ipi=1 and armcpu-mmio-sgi=0 select the IPI
+#              path; cpumask=31 runs the four Cortex-A76 cores (logical 0..3, the device tree lists them first) and the boot
+#              core; wdt-kick keeps the firmware's watchdog fed (without it the SoC resets about 89 s after the hand-off).
+# Storage, display, GPU, input and audio arguments join the list as those drivers arrive (docs/bring-up.md).
+kernel_args = [
+  "-v",
+  "serial=3",
+  "debug=0x10014e",
+  "-enable_kprintf_spam",
+  "sheng-smp=1",
+  "armcpu-self-ipi=1",
+  "armcpu-mmio-sgi=0",
+  "cpumask=31",
+  "wdt-kick=1800",
+]
+
+[payload.adt]
+chip_id = "0x1"
+unique_chip_id = "required"
+# The memory the kernel owns: DarwinBoot takes this many contiguous bytes from the UEFI memory map (2 GiB fits the low bank).
+owned_memory_size = "0x80000000"
+# The Data seed is a raw APFS container, so the ADT carries the RAMDisk placeholder, not the packed one.
+packed_data_ramdisk = false
+# The APFS volume inside the OS window of the root image; a property of the IPSW, so the same as on the EVB10.
+root_match_volume_uuid = "04769D26-2CA0-4825-B443-E2E5F88300F2"
+
+[device_tree]
+source = "device:dts/orangepi5.dts"
+include_dirs = ["soc:dts"]
+
+[components]
+include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "AppleKeyStoreState", "XnuPrelink", "DarwinBoot"]
+
+[adt]
+
+[adt.defaults]
+
+# sleep-disabled: suspend and resume are not implemented. vmm-present backs sysctl kern.hv_vmm_present, which
+# makes watchdogd exit cleanly; without it watchdogd traps, launchd restarts it and the kernel panics when the
+# third instance dies. kern.maxvnodes comes from the OS profile.
+[adt.defaults.u32]
+sleep-disabled = 1
+vmm-present = 1
+
+[adt.product]
+
+[adt.product.string]
+model = "xunlong,orangepi-5"

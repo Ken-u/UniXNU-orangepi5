@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: BSD-2-Clause-Patent
+/dts-v1/;
+/include/ "rk3588.dtsi"
+
+/ {
+	model = "Orange Pi 5";
+	compatible = "xunlong,orangepi-5", "rockchip,rk3588s", "rockchip,rk3588";
+
+	// Placeholder, the same bank the EVB10 uses: 4 GiB at 0x100000000 exists on the 8, 16 and 32 GiB boards (a 4 GiB board has
+	// 3.75 GiB below 0xf0000000 and only 256 MiB above 4 GiB). Check against the memory map in the firmware log of the first
+	// run and fix it here and in board.toml (dram_size). The kernel's own pages are taken by DarwinBoot below 4 GiB.
+	memory@100000000 {
+		device_type = "memory";
+		reg = <1 0x00000000 1 0x00000000>;
+	};
+};
+
+// Console: UART2 at 1.5 Mbaud on the 3-pin debug header, left configured by the firmware (the same UART and base
+// address as the EVB10). Storage (the NVMe drive behind pcie2x1l2), display (HDMI0 on VP0) and the Mali-G610 come with
+// their drivers; the Mali node stays disabled because the driver addresses the GPU by its fixed physical base.
+&uart2 { status = "okay"; };
