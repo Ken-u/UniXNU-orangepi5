@@ -1,0 +1,23 @@
+--- a/iokit/KernelConfigTables.cpp
++++ b/iokit/KernelConfigTables.cpp
+@@ -72,6 +72,20 @@
+     "     'IONameMatch'     = 'rockchip,rk3588-dwcmshc';"
+     "     'IOProbeScore'    = 1000:32;"
+     "   },"
++    /*
++     * Orange Pi 5: the NVMe drive in the M.2 slot (package/Rk3588Nvme, class NativeNvme). Built in unconditionally; the archive is
++     * force-loaded through CONFIG_XNU_EXTRA_LD_ARCHIVES, and a kernel without it simply never finds the class (the personality then
++     * matches nothing). The nub is /arm-io/pcie-nvme of the device tree: a node with no registers, see dts/orangepi5.dts.
++     *
++     * It sits next to the SoC's entry for the eMMC host, between the two original entries, for the same reason: the patches that add to
++     * the ends of this table check their context on every rebuild.
++     */
++    "   {"
++    "     'IOClass'         = NativeNvme;"
++    "     'IOProviderClass' = IOPlatformDevice;"
++    "     'IONameMatch'     = 'unixnu,rk3588-pcie-nvme';"
++    "     'IOProbeScore'    = 1000:32;"
++    "   },"
+     "   {"
+     "     'IOClass'         = IOExclaveProxy;"
+     "     'IOProviderClass' = IOService;"

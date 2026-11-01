@@ -1,2 +1,18 @@
 # Series of the Orange Pi 5 board patches, applied after the ARM64, SoC and OS series.
-orangepi5-root-trust-stub.patch
+#
+# The NVMe personality is this board's own; the evb10-* patches are the EVB10's, copied unchanged (see VENDORED.md: they hold the userland
+# hook, the Data volume, the SystemOS union mount and the console tweaks every RK3588 board of this port needs, and live in the EVB10 repository
+# only because that board came first). Their order is the EVB10's, because their context lines depend on it.
+
+# The NVMe drive in the M.2 slot: personality of NativeNvme (package/Rk3588Nvme), next to the SoC's one for the eMMC host
+orangepi5-nvme-personality.patch
+# Why a process went away (evb10-ps=N)
+evb10-exit-trace.patch
+# mmap(PROT_EXEC) of the owner's directory of programs and libraries
+evb10-mmap-grant.patch
+# User-stack frame-pointer chain of the threads of named processes (evb10-bt*)
+evb10-thread-sample.patch
+# Userland hook: Data volume, SystemOS union mount, owner test program, GPU add-on
+evb10-userland-mounts.patch
+# Mirror of the console on the frame buffer (vc_mirror=1) and -v text mode
+evb10-vc-mirror.patch

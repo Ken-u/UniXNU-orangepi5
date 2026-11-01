@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build the Orange Pi 5 kernel (configs/orangepi5_defconfig, one pass: no display archive yet).
+# Build the Orange Pi 5 kernel (configs/orangepi5_defconfig, one pass: console and NVMe storage, no display archive yet).
 #
 #   scripts/build-orangepi5-kernel.sh
 #
@@ -21,7 +21,8 @@ OUT="$UNIXNU/out/orangepi5/ipados-17.7.11-21H461/orangepi5"
 # Asm in patches and drivers: the target is Mach-O and the Darwin assembler treats ';' as a comment, so
 # "dsb ishst; msr x, %0; isb" assembles to a lone dsb. Separate instructions with "\n\t".
 semicolon='(__asm__|[^_[:alnum:]]asm)[[:space:]]*(volatile)?[[:space:]]*\([[:space:]]*"[^"]*;'
-bad="$( { grep -nE "^\\+.*$semicolon" "$DEVICE"/patches/xnu/*.patch 2>/dev/null || true; } )"
+bad="$( { grep -nE "^\\+.*$semicolon" "$DEVICE"/patches/xnu/*.patch 2>/dev/null || true; \
+          grep -nE "$semicolon" "$DEVICE"/package/*/*.cpp "$DEVICE"/package/*/*.h "$DEVICE"/package/*.c 2>/dev/null || true; } )"
 if [ -n "$bad" ]; then echo "$bad" >&2; echo "error: ';' inside inline assembly" >&2; exit 1; fi
 
 echo "== configure orangepi5_defconfig"
@@ -30,4 +31,8 @@ unixnu defconfig orangepi5_defconfig
 rm -f "$OUT"/tree/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped.noctf
 echo "== build kernel (orangepi5_defconfig)"
 unixnu build kernel -j "$JOBS"
+# The addresses NativeNvmeBlock was bound to are only valid for the original IOStorageFamily they were audited in: check the linked kernel.
+if [ -f "$OUT/kernel/kernel.json" ] && [ -f "$OUT/tree/scripts/bind-nvme-storage.py" ]; then
+	python3 "$OUT/tree/scripts/bind-nvme-storage.py" --verify-kernel "$OUT/kernel/kernel.json"
+fi
 echo "kernel: $OUT/kernel/kernel.macho"

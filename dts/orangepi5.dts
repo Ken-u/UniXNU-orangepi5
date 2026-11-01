@@ -6,9 +6,11 @@
 	model = "Orange Pi 5";
 	compatible = "xunlong,orangepi-5", "rockchip,rk3588s", "rockchip,rk3588";
 
-	// Placeholder, the same bank the EVB10 uses: 4 GiB at 0x100000000 exists on the 8, 16 and 32 GiB boards (a 4 GiB board has
-	// 3.75 GiB below 0xf0000000 and only 256 MiB above 4 GiB). Check against the memory map in the firmware log of the first
-	// run and fix it here and in board.toml (dram_size). The kernel's own pages are taken by DarwinBoot below 4 GiB.
+	// The same bank the EVB10 uses: 4 GiB at 0x100000000. The board this port is built for has 8 GiB, which is 3.75 GiB below
+	// 0xf0000000 and 4.25 GiB from 0x100000000, so the bank exists in full (a 4 GiB board would only have 256 MiB above 4 GiB).
+	// Check against the memory map in the firmware log of the first run and fix it here and in board.toml (dram_size).
+	// The kernel's own pages are taken by DarwinBoot from the UEFI memory map (payload.adt.owned_memory_size); where that
+	// window lies is not known until the first log, and the NVMe driver accepts any address below 1 TiB for its DMA window.
 	memory@100000000 {
 		device_type = "memory";
 		reg = <1 0x00000000 1 0x00000000>;
@@ -16,6 +18,34 @@
 };
 
 // Console: UART2 at 1.5 Mbaud on the 3-pin debug header, left configured by the firmware (the same UART and base
-// address as the EVB10). Storage (the NVMe drive behind pcie2x1l2), display (HDMI0 on VP0) and the Mali-G610 come with
-// their drivers; the Mali node stays disabled because the driver addresses the GPU by its fixed physical base.
+// address as the EVB10). Display (HDMI0 on VP0) and the Mali-G610 come with their drivers; the Mali node stays disabled
+// because the driver addresses the GPU by its fixed physical base.
 &uart2 { status = "okay"; };
+
+/ {
+	soc {
+		// The M.2 M-key slot: PCIe 2.0 x1, controller "pcie2x1l2" (PCI segment 4 of edk2-rk3588, Rk3588Pcie.h PCIE_*(4)). Documentation only:
+		// the node is disabled, so it is not exported to the ADT. NativeNvme addresses the controller by these fixed physical addresses
+		// (the DBI and configuration windows sit above 4 GiB, and the arm-io window spans every exported `reg`, so exporting them would
+		// stretch it over the whole of the first 40 GiB).
+		//   apb  0xfe190000   client registers (LTSSM status at +0x300)
+		//   dbi  0xa41000000  the root port's configuration space and the DesignWare registers (link status at +0x80)
+		//   cfg0 0xa36500000  iATU CFG0 window onto the endpoint 00:00.0 (bus base 100 + 1 MiB of the 128 MiB window at 0xa30000000), 64 KiB
+		//   mem32 bus 0xf0000000 + 128 MiB, CPU 0xa38000000   BARs assigned below 4 GiB on the bus
+		//   mem64 0xa00000000 + 768 MiB, bus = CPU            BARs assigned above 4 GiB
+		pcie2x1l2: pcie@fe190000 {
+			compatible = "rockchip,rk3588-pcie", "snps,dw-pcie";
+			reg = <0 0xfe190000 0 0x10000>, <0xa 0x41000000 0 0x400000>, <0xa 0x36500000 0 0x10000>;
+			reg-names = "apb", "dbi", "cfg0";
+			status = "disabled";
+		};
+
+		// The NVMe drive behind it, as the one node NativeNvme matches (personality in patches/xnu/orangepi5-nvme-personality.patch).
+		// No `reg` and no `interrupts` on purpose (see the notes in rk3588.dtsi): the drive is polled and its registers are reached
+		// through the fixed addresses above, like the EVB10's `wlan` node, which only exists to be there.
+		pcie-nvme {
+			compatible = "unixnu,rk3588-pcie-nvme";
+			unixnu,adt-name = "pcie-nvme";
+		};
+	};
+};

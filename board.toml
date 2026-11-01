@@ -9,12 +9,13 @@ soc_source = "rk3588"
 os_profile = "ipados-17.7.11-21H461"
 
 # The raw image `unixnu build userdata` writes for the `userdata` partition of the NVMe drive in the M.2 slot: a manifest,
-# the OS image and the SystemOS cryptex image of the IPSW. PROPOSED layout, not written to any drive yet: GPT, an ESP of
-# 512 MiB (LBA 2048 to 1050623, the payload: kernel, trust caches, unixnu.toml) and `userdata` right behind it, 64 GiB.
-# The block driver that publishes the windows (the NVMe counterpart of Rk3588Emmc) does not exist yet.
+# the OS image and the SystemOS cryptex image of the IPSW. Layout of the drive (tools/make-nvme-image.py writes it): GPT, an ESP of
+# 256 MiB (LBA 2048 to 526335, the payload: kernel, trust caches, unixnu.toml) and `userdata` right behind it, 64 GiB (LBA 526336
+# to 134744063, 1 MiB aligned), all of it inside the first 64.3 GiB, so any drive of 128 GB (250,069,680 sectors) or more holds it.
+# Rk3588Nvme publishes each window as a read-only block device; the Data volume is a window at the end of `userdata`.
 [userdata]
-first_lba = 1050624
-last_lba = 135268351
+first_lba = 526336
+last_lba = 134744063
 lba_bytes = 512
 windows = [
   { name = "OS", component = "OS" },
@@ -39,18 +40,25 @@ archives = [
   # IOAESAccelerator, which the original AppleImage4 waits for while it starts on /defaults.
   "component:SoftwareAES",
   "build-software-aes-bindings.py",
+  # The NVMe driver subclasses the original IOBlockStorageDevice: compile leaves an object, binding makes the archive.
+  "build-orangepi5-drivers.py Rk3588Nvme",
+  "bind-nvme-storage.py",
 ]
 
 [payload]
 volume = "OPI5ESP"
 # The payload is the ESP of the NVMe drive (BootWdt and the UniXNU modules are in the firmware volume, loader = "firmware"),
-# so it is not limited by a boot image: the proposed ESP above is 512 MiB.
+# so it is not limited by a boot image; the ESP is 256 MiB and the payload (kernel 48 MiB, Data seed 9 MiB, trust caches) fills about a third of it.
 size_mib = 256
 loader = "firmware"
 title = "UniXNU Orange Pi 5"
-# Placeholder: the board's RAM size is read from the firmware log of the first run (4, 8, 16 or 32 GiB).
+# The same 4 GiB bank as the EVB10's: it exists on the 4 GiB board too in the part below 0xf0000000 plus a little above, and DarwinBoot takes the
+# kernel's pages from the UEFI memory map anyway. Check the memory map of the first run's firmware log (8 GiB of DDR are fitted here).
 dram_size = "0x100000000"
 panic_screen = false
+# The profile's list ends with a different second digest: the second one here covers the SystemOS cryptex of the owner image (the same image
+# as the EVB10's, see its board.toml). The first is the profile's own.
+trust_cache_sha256 = ["7416ca4f8377146626bb284e2133c76bee6cb4e3ee0af5d648b186235a7323a7", "df91b6d7607238f0856b862020be8201018f0a61790f0d10ce9d0a544212b0b9"]
 
 # Boot arguments. Groups:
 #   console    -v verbose; serial=3 UART only (UART2 at 1.5 Mbaud, the 3-pin debug header);
@@ -59,16 +67,29 @@ panic_screen = false
 #   cpu        sheng-smp=1 starts the secondary cores (ArmCpu); armcpu-self-ipi=1 and armcpu-mmio-sgi=0 select the IPI
 #              path; cpumask=31 runs the four Cortex-A76 cores (logical 0..3, the device tree lists them first) and the boot
 #              core; wdt-kick keeps the firmware's watchdog fed (without it the SoC resets about 89 s after the hand-off).
-# Storage, display, GPU, input and audio arguments join the list as those drivers arrive (docs/bring-up.md).
+#   storage    nvme=4 publishes the OS and SystemOS windows of `userdata`; nvme-root-trust, emmc-systemos-union and emmc-data-mount (the last two are
+#              read by the kernel patch evb10-userland-mounts, hence their names), nvme-data-size (MiB, the seed's container) and nvme-data-persist=1
+#              keep the Data volume on the drive. offline-apfs-load=1 loads the original APFS kext for the volumes.
+# Display, GPU, input and audio arguments join the list as those drivers arrive (docs/bring-up.md). Not in the list, add them with
+# EXTRA_KERNEL_ARGS of the run script: vc_mirror=1 (the console also on the frame buffer), nvme=1 (probe the drive and publish nothing),
+# nvme-probe=N, nvme-data-reset=1.
 kernel_args = [
   "-v",
   "serial=3",
   "debug=0x10014e",
   "-enable_kprintf_spam",
+  "nvme=4",
+  "offline-apfs-load=1",
+  "nvme-root-trust=1",
+  "emmc-systemos-union=1",
+  "emmc-data-mount=1",
+  "nvme-data-size=2048",
+  "nvme-data-persist=1",
   "sheng-smp=1",
   "armcpu-self-ipi=1",
   "armcpu-mmio-sgi=0",
   "cpumask=31",
+  "sched-slowcpus=240",
   "wdt-kick=1800",
 ]
 

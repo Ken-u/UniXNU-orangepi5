@@ -2,7 +2,7 @@
 # (board.toml [kernel] config_fragments). CONFIG_XNU_<NAME> becomes XNU_<NAME> in the kernel build;
 # y and n become 1 and 0, {tree} in a string becomes the build tree.
 #
-# Console configuration for the first bring-up steps: no storage, display, GPU or input driver yet.
+# Console and storage: the NVMe driver (package/Rk3588Nvme). No display, GPU or input driver yet.
 
 # --- what the ARM64 and OS profiles enable that this board does not use ------------------------------
 CONFIG_XNU_NATIVE_ADRENO=n
@@ -15,6 +15,11 @@ CONFIG_XNU_NATIVE_UFS=n
 CONFIG_XNU_NATIVE_VIRTIO_BLOCK=n
 CONFIG_XNU_NATIVE_RAM_BLOCK=n
 CONFIG_XNU_NATIVE_VIRTIO_CONSOLE=n
+
+# --- drivers linked next to the kernel ----------------------------------------------------------------
+# The NVMe drive (package/Rk3588Nvme, bound to the original IOBlockStorageDevice by scripts/bind-nvme-storage.py). The base build has no
+# switch for it, so it joins the link through the generic extra-archive hook.
+CONFIG_XNU_EXTRA_LD_ARCHIVES="-Wl,-force_load,{tree}/build/rk3588-nvme/libRk3588Nvme.a"
 
 # --- kernel facilities the port expects ----------------------------------------------------------------
 # 4 KiB signature hashes derived from verified 16 KiB blocks; no archive, no hardware assumption.
