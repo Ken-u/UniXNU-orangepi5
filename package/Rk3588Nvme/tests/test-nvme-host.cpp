@@ -55,7 +55,7 @@ struct Model {
   struct Queue {
     uint64_t sq = 0, cq = 0;
     uint32_t sqEntries = 0, cqEntries = 0;
-    uint32_t sqHead = 0, cqTail = 0, phase = 1;
+    uint32_t sqHead = 0, cqTail = 0, cqHead = 0, phase = 1;   // cqHead: the last head doorbell the host rang
     bool sqCreated = false, cqCreated = false;
   };
   Queue adminQ, ioQ;
@@ -169,6 +169,7 @@ struct Model {
     }
     if (completion) {
       if (!queue->cqCreated || value >= queue->cqEntries) violation("bad CQ head doorbell");
+      else queue->cqHead = value;
       return;
     }
     if (!queue->sqCreated || value >= queue->sqEntries) {
@@ -198,6 +199,11 @@ struct Model {
   }
 
   void complete(Queue &queue, uint32_t commandId, uint32_t result, uint32_t status) {
+    if ((queue.cqTail + 1) % queue.cqEntries == queue.cqHead) {
+      // A full queue: the controller cannot post, the command never completes. It happens when the host does not ring the head doorbell.
+      violation("completion queue full: the host does not ring the CQ head doorbell");
+      return;
+    }
     uint8_t *entry = dma(queue.cq + queue.cqTail * 16ull, 16);
     if (!entry) return;
     uint32_t words[4] = {result, 0, queue.sqHead, commandId | (queue.phase << 16) | (status << 17)};
@@ -363,6 +369,7 @@ struct Model {
         ioQ.cq = prp1;
         ioQ.cqEntries = entries;
         ioQ.cqTail = 0;
+        ioQ.cqHead = 0;
         ioQ.phase = 1;
         ioQ.cqCreated = true;
         complete(queue, id, 0, 0);
