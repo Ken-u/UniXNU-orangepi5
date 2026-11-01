@@ -20,7 +20,10 @@ and its windows, the Data volume, the kernel hooks, the watchdog feeder, the pow
 ```sh
 g++ -std=c++17 -Wall -Wextra -Werror -O1 -I . tests/test-nvme-host.cpp -o /tmp/test-nvme-host && /tmp/test-nvme-host
 g++ -std=c++17 -Wall -Wextra -Werror -O1 -I . tests/test-root-manifest.cpp -o /tmp/test-root-manifest && /tmp/test-root-manifest
+g++ -std=c++17 -Wall -Wextra -Werror -O1 -I . tests/check-gpt-image.cpp -o /tmp/check-gpt-image && /tmp/check-gpt-image DISK_IMAGE_OR_DEVICE
 ```
+
+The last one reads a disk (image) with the driver's own GPT reader; it checks what `tools/board/nvme-install.py` of `uefi-orangepi5` writes.
 
 `test-nvme-host` runs `NvmeHost.h` and `Gpt.h` against a model that enforces what the host depends on (reset before the queue registers are
 written, doorbells only for queues that exist, every address inside the DMA window, page-aligned PRPs, phase-bit completions, writes only inside
