@@ -76,7 +76,7 @@ test notices), `tests/test-root-manifest.cpp`, `tests/check-gpt-image.cpp` (the 
 | M1 | The kernel starts from the NVMe ESP payload; the driver finds the drive (`nvme=1` shows PCIe, NVMe identify, GPT, probe) | M0 | done (2026-11-03) |
 | M2 | Root and Data mount, `launchd` runs | A written userdata partition | done (2026-11-03): root windows, Data formatted at the first boot, `launchd` up; a second boot over the formatted Data window is still to be seen |
 | M3 | The boot screen on the HDMI monitor through the GOP frame buffer | M1 | text mirror done (`xnu-hdmi`, `vc_mirror=1`); the display kernel (original IOMobileFramebufferLegacy on UniXNU's GOP backend) is built and its payload is on the ESP, not yet run (`evidence/host-display-build-20261103.txt`) |
-| M4 | VOP2 scanout on video port 0, Mali composition, frame rate | M2, M3 | not started |
+| M4 | VOP2 scanout on video port 2, Mali composition, frame rate | M2, M3 | the Mali driver (`package/Mali`, the EVB10's commit) is linked into the display kernel and inert without `mali=N`; nothing of it has run on the board (`evidence/host-gpu-build-20261103.txt`); the VOP2 scanout of its own is not started |
 | later | USB input (xHCI + HID), audio, Ethernet and Wi-Fi, microSD | | |
 
 ## Placeholders and open inputs

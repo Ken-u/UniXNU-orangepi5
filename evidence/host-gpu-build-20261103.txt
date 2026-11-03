@@ -1,0 +1,32 @@
+Host verification of the Mali-G610 driver link-in on the Orange Pi 5 kernel (nothing of this ran on the board).
+
+Machine: build host, Ubuntu 20.04, no root (user namespace wrapper).
+Device repository: ce6c6fb (feat(gpu): link the Mali-G610 driver (package/Mali), started only with mali=N); parent 8e6898a.
+package/Mali: Ken-u/Mali 9dd949ae73b26b792777a793b4985d79e27eb87b, the commit the RK3588 EVB10 port uses (README: the driver programs the
+SoC's PMU at 0xfd8d8000, CRU at 0xfd7c0000 and the GPU at 0xfb000000, power domain 12; the Orange Pi 5 has the same SoC).
+
+1. Firmware include: scripts/extract-files.py (proprietary-files.txt, mali_csffw.bin|8e7c821a55ca1c345cc79f61243616dd25fc35b81f090946f302886d67712df5)
+   took the blob from the EVB10 workspace's .cache/firmware ("extracted mali_csffw.bin (274432 bytes)", hash checked); the kernel step's
+   archive-12-build-mali-firmware turned it into kits/orangepi5/Mali/mali_csffw.inc (1380894 bytes in the build tree, not committed).
+
+2. Kernel (source host/env.sh && cd UniXNU-orangepi5 && scripts/build-orangepi5-kernel.sh; pass A skipped, pass B only):
+     archive-13 build-orangepi5-drivers.py Mali: no compile error (the script compiles with the kernel's own flags and audits the object by its
+       source; its output line is not in the kernel log) -> build/mali/libMali.a (892168 bytes, sha256
+       00ef7ebe71490e36507911247c667a5716137087d14446f26e6328d3903c1af5)
+     kernel.macho: 51658752 bytes (372736 more than the display kernel of host-display-build-20261103.txt), sha256
+       9281cf988f1c4e97e3885b33b88b69ff0b87a16896958a0985ab44307d6ae83d, crc32 7bec4f41
+     PASS: the kernel carries the audited original IOStorageFamily (f18b4df865405f2a), 18 bound addresses inside it
+     the strings "mali: Mali-G610 bring-up" and "opi5: display" are in the executable. The strong mali_gpu_addon and mali_test_file of
+     Mali.cpp replace the weak versions of the NVMe driver (the link had no duplicate-symbol error).
+   The late display probe calls mali_start(), which returns at once without the boot argument mali=N (Mali.cpp: PE_parse_boot_argn("mali")
+   absent or 0). board.toml has no mali argument, so a boot of this kernel with the committed arguments must behave as the display
+   kernel without the driver; that is what the first trial is meant to show.
+
+3. Payload (REBUILD=1 tools/board/make-bundle.sh): kernel.macho crc32 7bec4f41 (51658752 bytes), kernel.macho.adt 14112 bytes crc32 970b5293,
+   kernel.macho.trustcache crc32 e3343405 (unchanged), unixnu.toml 3042 bytes crc32 fe909e88 (unchanged).
+
+What is on the ESP of the board now (see host-display-build-20261103.txt, section 3): the display kernel WITHOUT the Mali driver
+(51286016 bytes, crc32 f7215c41, written but not verified), ADT 035bde5f and unixnu.toml fe909e88. The next write is the kernel of this file.
+
+What this does not show: that the Mali driver brings up the GPU on this board (the rail, the clocks the firmware left, the 198 MHz default),
+that the user-space Metal stack is in the root image of this board, or anything about frame rate.
