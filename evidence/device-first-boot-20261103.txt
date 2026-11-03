@@ -1,0 +1,213 @@
+First run on the Orange Pi 5: U-Boot, launcher, firmware, NVMe, root volume, launchd (2026-11-03)
+==================================================================================================
+
+Excerpts of two serial captures of the board. Lines are copied unchanged (time stamps are seconds since the capture started;
+lines longer than 200 characters are cut; the serial number of the NVMe drive is replaced by <redacted> and the build tag in the U-Boot version by <builder>); the lines between the
+excerpts are left out. The raw captures are not stored in the repository (logs and images are ignored).
+
+Device      Orange Pi 5 (RK3588S, 8 GiB LPDDR4x), Silicon Motion NE-128 (128 GB) NVMe drive in the M.2 slot, UART2 console at 1.5 Mbaud
+Captures    auto1: 2026-11-03 11:07, 330 s, reset from the U-Boot prompt, default menu entry (xnu-probe)
+            xnu1:  2026-11-03 11:16, 480 s, the menu entry xnu picked by the capture tool ("1" after the line "menu: shown")
+Commands    cd uefi-orangepi5 && tools/board/capture-remote.sh auto1 330     (then "reset" typed at the U-Boot prompt)
+            cd uefi-orangepi5 && CAPTURE_ARGS="--send 'menu: shown' text:1" tools/board/capture-remote.sh xnu1 480
+U-Boot      v5-gc507c92ef837-261013-dirty #<builder> (the board owner's build, in the SPI NOR; nothing was flashed)
+Firmware    uefi-orangepi5 5389894ba1593a8e81f70003e101352ffbe3c7c5 (the volume is the one built by build.sh -L at d5b57c9d60aa3ff109835eeb6121c32e2c8488c3, no code since)
+            uefi-launcher.img 5251560 bytes, sha256 00aed17781f6301f7246576a89f29670893486de613b16a7cc1b269d59e11036
+            boot.scr 1209 bytes, sha256 8ae410e7bb7eb0813e928759cabc7ef4a2a747fc1ce8602717abd987f779b028
+Kernel      UniXNU-orangepi5 b1d3c18fc1ba985101e5d3c372d18e59d0378df4, UniXNU-rk3588-common 99b07c4ccd53ceed396e7ce9a6e4de806d125bcd (SoC part unchanged by it)
+            kernel.macho 51154944 bytes, sha256 178d2e1fd5415e47679e8ae6b48d12691d2dc31324572458acfc5ac92769b617
+Disk        esp.img (payload of 256 MiB with the launcher) sha256 da7329a498993e09a9cc57d10202f94d21ef07f6306d64ecfc32743f637e7fe2, written from a Mac through ums
+
+1. U-Boot starts boot.scr, the launcher and the firmware (auto1; area firmware)
+-------------------------------------------------------------------------------
+[   6.013] Model: Xunlong Orange Pi 5
+[   6.388] U-Boot v5-gc507c92ef837-261013-dirty #<builder> (Nov 03 2026 - 09:13:13 +0800)
+[   6.388] Model: Xunlong Orange Pi 5
+[   7.735] Model: Xunlong Orange Pi 5
+[   9.748] Scanning for bootflows in all bootdevs
+[   9.803] Scanning bootdev 'nvme#0.blk#1.bootdev':
+[   9.803]   0  script       ready   nvme         1  nvme#0.blk#1.bootdev.part /boot.scr
+[   9.803] ** Booting bootflow 'nvme#0.blk#1.bootdev.part_1' with script
+[   9.803] UniXNU launcher: nvme 0x0:0x1
+[   9.803]    Booting using the fdt blob at 0xebc75280
+[   9.811] Starting kernel ...
+[   9.826] LAUNCHER: EL=02 copying the firmware volume to 0x200000
+[   9.940] LAUNCHER: DW WDT 0xfeaf0000 armed (TORR 0xf), UniXNUBootWdtDxe takes over feeding
+[   9.940] LAUNCHER: jumping to 0x200000 + 0x1400
+[   9.980] UEFI firmware (version 0 built at 01:58:11 on Nov  3 2026)
+
+2. Memory as the firmware sees it (auto1; area memory)
+------------------------------------------------------
+[   9.980] SdramGetMemorySize(): Ch #0: 2048 MB
+[   9.980] SdramGetMemorySize(): Ch #1: 2048 MB
+[   9.980] SdramGetMemorySize(): Ch #2: 2048 MB
+[   9.980] SdramGetMemorySize(): Ch #3: 2048 MB
+[   9.980] SdramGetMemorySize(): Detected 8192 MB RAM
+[   9.980] RAM: 0x00000000 (Size 0x200000000)
+[   9.980] TF-A + Shared Memory:
+[   9.980] 	PhysicalBase: 0x0
+[   9.980] 	VirtualBase: 0x0
+[   9.980] 	Length: 0x200000
+[   9.984] UEFI FV:
+[   9.984] 	PhysicalBase: 0x200000
+[   9.984] 	VirtualBase: 0x200000
+[   9.984] 	Length: 0x500000
+[   9.984] Variable Store:
+[   9.984] 	PhysicalBase: 0x7C0000
+[   9.984] 	VirtualBase: 0x7C0000
+[   9.984] 	Length: 0x30000
+[   9.984] System RAM (< OP-TEE):
+[   9.984] 	PhysicalBase: 0x7F0000
+[   9.984] 	VirtualBase: 0x7F0000
+[   9.984] 	Length: 0x7C10000
+[   9.984] OP-TEE:
+[   9.984] 	PhysicalBase: 0x8400000
+[   9.984] 	VirtualBase: 0x8400000
+[   9.984] 	Length: 0x1000000
+[   9.984] System RAM (< 4GB):
+[   9.984] 	PhysicalBase: 0x9400000
+[   9.984] 	VirtualBase: 0x9400000
+[   9.984] 	Length: 0xE6C00000
+[   9.984] MMIO:
+[   9.984] 	PhysicalBase: 0xF0000000
+[   9.984] 	VirtualBase: 0xF0000000
+[  10.005] 	Length: 0x10000000
+[  10.005] System RAM >= 4GB:
+[  10.005] 	PhysicalBase: 0x100000000
+[  10.005] 	VirtualBase: 0x100000000
+[  10.005] 	Length: 0x100000000
+[  10.005] MMIO > 32GB:
+[  10.005] 	PhysicalBase: 0x900000000
+[  10.005] 	VirtualBase: 0x900000000
+[  10.005] 	Length: 0x141400000
+[  10.424] Memory Allocation 0x00000000 0x8400000 - 0x93FFFFF
+
+3. The PCIe link of the NVMe slot, brought up again by the firmware after U-Boot used the drive (auto1)
+-------------------------------------------------------------------------------------------------------
+[   6.701] pcie@fe190000: PCIe Linking... LTSSM is 0x0
+[   6.717] pcie@fe190000: PCIe Linking... LTSSM is 0x1
+[   6.733] pcie@fe190000: PCIe Link up, LTSSM is 0x130011
+[   7.723] pcie@fe190000: PCIE-0: Link up (Gen2-x1, Bus0)
+[  11.100] PCIe: Segment 4
+[  11.100] PCIe: ApbBase 0xFE190000
+[  11.100] PCIe: DbiBase 0xA41000000
+[  11.100] PCIe: NumLanes 1
+[  11.100] PCIe: LinkSpeed 2
+[  11.200] PCIe: Setup clocks
+[  11.200] PCIe: Switching to RC mode
+[  11.200] PCIe: Enabling DBI access
+[  11.200] PCIe: Setup BARs
+[  11.200] PCIe: Setup iATU
+[  11.241] PCIe: Set link speed
+[  11.241] PCIe: SetupBars: Speed change
+[  11.241] PCIe: Assert reset
+[  11.241] PCIe: Start LTSSM
+[  11.342] PCIe: Deassert reset
+[  11.342] PCIe: Waiting for link up...
+[  11.342] PCIe: PciIsLinkUp(): LTSSM_STATUS=0x00000003
+[  11.431] PCIe: PciIsLinkUp(): LTSSM_STATUS=0x00030011
+[  11.431] PCIe: Link up (x1, 2.5 GT/s)
+
+4. Menu, hand-off and the drive as the kernel finds it (auto1, nvme=1: probe only; area storage)
+------------------------------------------------------------------------------------------------
+[  17.410] UNIXNU: menu: shown 5 entries, default 2 'xnu-probe', timeout 10000 ms, input ye
+[  17.410] UNIXNU: menu: shown 5 entries, default 2 'xnu-probe', timeout 10000 ms, input yes, rotate 0 ms
+[  27.413] UNIXNU: boot: entry 'xnu-probe' (UniXNU Orange Pi 5 (probe the NVMe drive only))
+[  27.413] UNIXNU: boot: entry 'xnu-probe' (UniXNU Orange Pi 5 (probe the NVMe drive only))
+[  27.820] DARWINBOOT: video base=0xE7AC0000 display=1 row=2560 width=640 height=480 depth=
+[  27.820] DARWINBOOT: command line: -v serial=3 debug=0x10014e -enable_kprintf_spam nvme=1
+[  27.878] ?DARWINBOOT: hand-off to the kernel
+[  28.679] NativeNvme: pcie: LTSSM 0x30011 (L0, link up), root port link status 0x30110000: Gen1 x1, root port command 0x100007
+[  28.679] NativeNvme: pcie: 00:00.0 vendor 0x126f device 0x2263 class 0x10802 revision 0x3 header 0 subsystem 0x2263126f command/status 0x100006
+[  28.679] NativeNvme: pcie:   capability 0x1 at 0x40: 0x35001
+[  28.683] NativeNvme: pcie:   capability 0x5 at 0x50: 0x1867005
+[  28.683] NativeNvme: pcie:   capability 0x10 at 0x70: device control 0x2010, link status 0x1011 (Gen1 x1)
+[  28.683] NativeNvme: pcie:   capability 0x11 at 0xb0: 0xf0011
+[  28.683] NativeNvme: pcie: command 0x6 -> 0x406, root port command 0x7
+[  28.683] NativeNvme: pcie: BAR0 0xf0000000 (64-bit, not prefetchable) is at CPU address 0xa38000000
+[  28.701] NativeNvme: data-ram: RAMDisk physical 0x440c9000, 9437184 bytes, at 0xfffffff0082c9000; header d6f06be0 4f0daaf8 (NXSB at +32: 4e585342)
+[  28.916] NativeNvme: data-ram: no memory for 2048 MiB
+[  28.969] NativeNvme: NVMe 1.3.0, 256 queue entries at most, doorbell stride 4, ready timeout 120000 ms, pages 4..8 KiB, command sets 0x1
+[  28.977] NativeNvme: controller as the firmware left it: CC 0x460001 CSTS 0x1
+[  28.977] NativeNvme: controller "NE-128" serial "<redacted>" firmware "U0819A0": 1 namespaces, MDTS 6 (512 blocks), volatile write cache yes, ONCS 0x15
+[  28.977] NativeNvme: namespace 1: 250069680 blocks of 2^9 bytes (format 0, 0 metadata bytes) = 122104 MiB
+[  28.977] NativeNvme: queues granted: 8 submission, 8 completion
+[  28.977] NativeNvme: initialised: CAP 0x100030f00100ff VS 0x10300 CC 0x460001 CSTS 0x1 AQA 0xf000f ASQ 0x4690c000 ACQ 0x4690d000 INTMS 0xffffffff
+[  28.981] NativeNvme: GPT disk d2fd5692-e417-5794-a59c-971b39285b3b: my=1 alt=250069679 (250069680 blocks, 122104 MiB) usable 34..250069646, 128 x 128 entries at 2; header crc ok, entries crc ok
+[  28.981] NativeNvme: gpt[0] "esp" lba 2048-526335 (256 MiB) type c12a7328-f81f-11d2-ba4b-00a0c93ec93b
+[  28.981] NativeNvme: gpt[1] "userdata" lba 526336-134744063 (65536 MiB) type 0fc63daf-8483-4772-8e79-3d69d8477de4
+[  28.999] NativeNvme: 2 partitions
+[  28.999] NativeNvme: userdata head lba 526336: 53 48 4e 47 52 4f 4f 54 01 00 00 00 02 00 00 00 00 00 40 2f 02 00 00 00 4f 53 00 00 00 00 00 00 
+[  28.999] NativeNvme: userdata starts with "SHNGROOT" (an UniXNU root image starts with SHNGROOT)
+[  29.085] NativeNvme: probe 4096 blocks of userdata twice, 256 blocks per command: crc32 0x6fa1d3dd / 0x6fa1d3dd (stable), 28216 us / 28272 us = 72582 KiB/s; next range read 28154 us = 72742 KiB/s (c
+[  29.086] NativeNvme: reads by DMA ON
+[  29.086] NativeNvme: 12322 blocks read, 57 commands, 0 retries, 0 recoveries, 0 failures, 0 timeouts, 31209 us
+[  30.582] NativeNvme: Data settled with 2 IOMedia below it, 10 ram requests (0 writes), 0 failures
+[  30.582] NativeNvme: media disk0: content , 9437184 bytes, whole, writable uuid -
+[  30.582] NativeNvme: media disk1: content EF57347C-0000-11AA-AA11-00306543ECAC, 9437184 bytes, whole, writable uuid 4C1B5D18-EECD-4C5D-978E-5DA483FF824A
+
+5. Without a root the probe run ends as planned: root wait, panic, restart (auto1)
+----------------------------------------------------------------------------------
+[  88.966] panic(cpu 4 caller 0xfffffff00798c150): Failed to mount root device @IOKitBSDInit.cpp:984
+[  88.966] Debugger message: panic
+  ...
+[  89.933] U-Boot v5-gc507c92ef837-261013-dirty #<builder> (Nov 03 2026 - 09:13:13 +0800)
+[  93.346] UniXNU launcher: nvme 0x0:0x1
+[ 110.957] UNIXNU: boot: entry 'xnu-probe' (UniXNU Orange Pi 5 (probe the NVMe drive only))
+
+6. The xnu entry: menu key, kernel, root windows and the Data window (xnu1; areas storage, firmware)
+----------------------------------------------------------------------------------------------------
+[  78.690] UNIXNU: menu: key 1, booting 0
+[  78.690] UNIXNU: menu: key 1, booting 0
+[  78.690] UNIXNU: boot: entry 'xnu' (UniXNU Orange Pi 5)
+[  78.690] UNIXNU: boot: entry 'xnu' (UniXNU Orange Pi 5)
+[  79.096] DARWINBOOT: video base=0xE7AC0000 display=1 row=2560 width=640 height=480 depth=
+[  79.097] DARWINBOOT: command line: -v serial=3 debug=0x10014e -enable_kprintf_spam nvme=4
+[  79.149] ?DARWINBOOT: hand-off to the kernel
+[  79.955] NativeNvme: pcie: BAR0 0xf0000000 (64-bit, not prefetchable) is at CPU address 0xa38000000
+[  80.037] NativeNvme: root image at block 526336: 2 windows, 9382658048 bytes of 68719476736
+[  80.037] NativeNvme:   window "OS" offset 0x100000 size 6077580800 bytes (5796 MiB)
+[  80.037] NativeNvme:   window "SystemOS" offset 0x16a600000 size 3303014400 bytes (3150 MiB)
+[  80.040] NativeNvme: publication order: SystemOS OS
+[  80.040] NativeNvme: boot-manifest-hash published in /chosen: 866c504d78e601fd8ec6544e70d60e137bf4bece7f2c0108a4b675bb0a5820e957c889a25d88eed0703035cb0a372bd6 (domain EmmcRootImage.OwnerBootSet.v1)
+[  80.044] NativeNvme: data: window lba 130547712..134744063 (2049 MiB: 1 MiB header + 2048 MiB container of 4096-byte blocks), root image ends at 18851840
+[  80.044] NativeNvme: published SystemOS: lba 12400640 + 6451200 blocks (3150 MiB), read-only
+[  80.117] NativeNvme: data: no header in the window: formatting
+[  80.642] NativeNvme: data: formatted the Data window at lba 130547712 (64 MiB zeroed in 357 ms, seed of 9216 KiB, all in 534 ms): ready
+[  80.642] NativeNvme: published Data: lba 130549760 + 4194304 blocks (2048 MiB), WRITABLE
+[  81.678] NativeNvme: SystemOS settled with 3 IOMedia below it, 107 block requests, 0 failures
+[  81.678] NativeNvme:   volume "DawnUpdate21H461.J120J121J207J208SystemCryptex" status Online sealed Yes
+[  81.684] NativeNvme: published OS: lba 528384 + 11870275 blocks (5796 MiB), read-only
+[  81.720] NativeNvme: root device 1,9 (disk5s1) is a read-only volume of the "OS" window: accepted without Apple's root authentication (boot-arg nvme-root-trust=1)
+[  81.720] NativeNvme: root device 1,9 (disk5s1) is a read-only volume of the "OS" window: accepted without Apple's root authentication (boot-arg nvme-root-trust=1)
+[  81.724] NativeNvme: SystemOS volume 8846FE78-2910-4297-AF97-D59BB6F8FC16 is /dev/disk1s1 (device 1,2), read-only
+[  81.738] NativeNvme: Data volume 3E8C2B1A-5D47-4F90-A6C3-9B1D7E0F2A48 is /dev/disk3s1 (device 1,5), writable
+[  82.266] NativeNvme: Data (on the drive) settled with 3 IOMedia below it, 650 write calls (151370 blocks), 0 failures
+[  82.266] NativeNvme:   volume "OwnerData" status Online sealed No
+[  83.309] NativeNvme: OS settled with 4 IOMedia below it, 886 block requests, 0 failures
+[  83.327] NativeNvme:   volume "DawnUpdate21H461.J120J121J207J208OS" status Online sealed No
+[  83.327] NativeNvme: all 2 root windows published
+
+7. launchd and the userland (xnu1; area storage). SpringBoard never appears: this kernel has no display, GPU or audio driver
+----------------------------------------------------------------------------------------------------------------------------
+[  79.674] Scheduler: Default of clutch
+[  85.005] armcpu: cpu 0 running, 2216 MHz
+[  85.005] armcpu: cpu 1 running, 2216 MHz
+[  85.005] armcpu: cpu 2 running, 2242 MHz
+[  85.005] armcpu: cpu 3 running, 2243 MHz
+[ 108.705] com.apple.xpc.launchd|1970-01-01 00:00:41.495298 <Notice>: launchd logging initialized. name: com.apple.xpc.launchd pid: 1
+[ 109.156] AMFI: Launch Constraint Violation (not enforcing), error info: c[6]p[2]m[3]e[255], (Process was launched as a system service unexpectedly but met System Service constraints) launching proc[
+[ 109.243] [System Event] [1008918824] [INFO] [Subsystem: launchd] [Event: boot] Early boot complete. Continuing system boot.
+[ 125.516] com.apple.xpc.launchd|1969-12-31 16:00:58.308615 (user/501/com.apple.WebBookmarks.webbookmarksd [122]) <Error>: Missing executable detected. Job: 'com.apple.WebBookmarks.webbookmarksd' Exec
+[ 129.495] Process[29] crashed: mediaserverd. Too many corpses being created.
+[ 129.595] Process[164] crashed: mediaserverd. Too many corpses being created.
+
+8. The end of the capture: no panic in the 400 s after the hand-off, the kernel feeds the watchdog (xnu1)
+---------------------------------------------------------------------------------------------------------
+[ 175.298] tx_flush:1338: disk3 xid 221 tx stats: # 220 owait 26 3447us finish 219 bar2 217 f 11 enter 6 fq 19 23 157us close 0us prep 126us flush 2726us
+[ 216.615] tx_flush:1338: disk3 xid 241 tx stats: # 240 owait 29 3120us finish 239 bar2 237 f 12 enter 583 fq 13 16 149us close 0us prep 642us flush 3955us
+[ 315.020] NativeNvme: wdt-kick: feed 48: count 0x78d89380 -> 0x7ffffffd (CR 0x9 STAT 0x0)
+[ 375.012] NativeNvme: wdt-kick: feed 60: count 0x78d893b3 -> 0x7ffffffe (CR 0x9 STAT 0x0)
+[ 435.037] NativeNvme: wdt-kick: feed 72: count 0x78d8937f -> 0x7ffffffe (CR 0x9 STAT 0x0)
+# capture end 480.098 s, 169104 raw bytes
+

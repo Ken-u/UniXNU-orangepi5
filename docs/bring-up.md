@@ -1,8 +1,11 @@
 # Orange Pi 5 bring-up
 
-Status: **host side complete for the first round (console kernel, NVMe storage), nothing has run on the board.** The firmware builds
-(`uefi-orangepi5`), the kernel with the NVMe driver builds and links, the payload and the NVMe image are assembled and checked on the
-host. Every "expected" below is a plan, not an observation. The procedure for the board is `uefi-orangepi5/docs/first-boot.md`.
+Status (2026-11-03): **the console kernel boots on the board from the NVMe drive: `launchd` runs.** Observed on hardware (serial log,
+`evidence/device-first-boot-20261103.txt`): U-Boot starts the launcher from `boot.scr`, the firmware shows 8 GiB, finds the NVMe ESP and
+starts DarwinBoot, the kernel identifies the drive, reads the GPT, publishes the root windows and a persistent Data window, and `launchd`
+reaches "Early boot complete" 30 s after the hand-off; the kernel then runs the 400 s until the capture ends without a panic. Not done:
+display (HDMI shows the firmware's screens only and nobody has looked at the monitor), GPU, input, the real memory map in the ADT. The
+procedure for the board is `uefi-orangepi5/docs/first-boot.md`.
 
 ## Board
 
@@ -44,15 +47,15 @@ Derived from `Rk3588Emmc` of the EVB10 port: the same GPT scan, root manifest, D
 the host core is an NVMe one (`NvmeHost.h`: reset, admin queue, identify, one I/O queue pair, polled completions, PRP transfers through a
 contiguous bounce window, writes only inside the Data window).
 
-What is assumed about the hardware (from the sources of edk2-rk3588, **not measured**):
+The hardware as the first run measured it (the plan was derived from the sources of edk2-rk3588):
 
 | | |
 | --- | --- |
 | Controller | PCIe segment 4 (`pcie2x1l2`): APB `0xfe190000`, DBI `0xa41000000`, configuration space of the drive through the iATU CFG0 window at `0xa36500000` |
-| BAR | assigned by the firmware in the 32-bit window (bus `0xf0000000`, CPU `0xa38000000`, 128 MiB) or the 64-bit window (`0xa00000000`, bus = CPU) |
-| State | the firmware's `NvmExpressDxe` leaves the controller enabled; the driver resets it (`CC.EN = 0`) before it programs the queues |
-| DMA | bus address = CPU physical address, no IOMMU; not cache coherent, hence `dc civac` around every transfer. The window is allocated below 1 TiB |
-| Blocks | 512-byte logical blocks without metadata (anything else is refused with a message) |
+| BAR | BAR0 is a 64-bit non-prefetchable BAR that edk2 put in the 32-bit window (bus `0xf0000000`, CPU `0xa38000000`, 128 MiB window); the 64-bit window (`0xa00000000`, bus = CPU) stays as the other case. The first driver version refused it (it took every 64-bit BAR for the 64-bit window) |
+| State | the firmware's `NvmExpressDxe` leaves the controller enabled (`CC 0x460001`); the driver resets it (`CC.EN = 0`) before it programs the queues; works. U-Boot reports Gen2 x1 for its own link-up, the firmware (2.5 GT/s) and the kernel see Gen1 x1 |
+| DMA | bus address = CPU physical address, no IOMMU; not cache coherent, hence `dc civac` around every transfer. The window is allocated below 1 TiB. Reads agree (two CRCs of the same 4096 blocks, 72 MiB/s, 0 failures); writes are exercised by the Data window only |
+| Blocks | 512-byte logical blocks without metadata (anything else is refused with a message); the drive is one |
 
 The ADT carries `/arm-io/pcie-nvme` (compatible `unixnu,rk3588-pcie-nvme`, no `reg`, no `interrupts`); the controller is addressed by the
 fixed physical addresses above, as the Mali driver of the EVB10 does. `patches/xnu/orangepi5-nvme-personality.patch` adds the IOKit personality.
@@ -69,19 +72,22 @@ test notices), `tests/test-root-manifest.cpp`, `tests/check-gpt-image.cpp` (the 
 
 | | Goal | Needs | State |
 | --- | --- | --- | --- |
-| M0 | UEFI runs on the board: serial log, HDMI picture, NVMe drive visible | Board, serial adapter, U-Boot in the SPI NOR with `ums` and a Mac to write the drive (or a way to write the SPI NOR) | bundle and launcher ready |
-| M1 | The kernel starts from the NVMe ESP payload; the driver finds the drive (`nvme=1` shows PCIe, NVMe identify, GPT, probe) | M0 | kernel and payload built |
-| M2 | Root and Data mount, `launchd` runs | A written userdata partition | image and installer ready |
+| M0 | UEFI runs on the board: serial log, HDMI picture, NVMe drive visible | Board, serial adapter, U-Boot in the SPI NOR with `ums` and a Mac to write the drive (or a way to write the SPI NOR) | serial log, NVMe ESP and drive seen: done; HDMI picture not looked at |
+| M1 | The kernel starts from the NVMe ESP payload; the driver finds the drive (`nvme=1` shows PCIe, NVMe identify, GPT, probe) | M0 | done (2026-11-03) |
+| M2 | Root and Data mount, `launchd` runs | A written userdata partition | done (2026-11-03): root windows, Data formatted at the first boot, `launchd` up; a second boot over the formatted Data window is still to be seen |
 | M3 | The boot screen on the HDMI monitor through the GOP frame buffer | M1 | not started |
 | M4 | VOP2 scanout on video port 0, Mali composition, frame rate | M2, M3 | not started |
 | later | USB input (xHCI + HID), audio, Ethernet and Wi-Fi, microSD | | |
 
 ## Placeholders and open inputs
 
-- `dts/orangepi5.dts` memory node and `payload.dram_size`: 4 GiB at `0x100000000`, which exists on this 8 GiB board in full. Replace
-  with the memory map of the first run if it disagrees.
-- `payload.adt.chip_id`, `payload.adt.owned_memory_size` (2 GiB): copied from the EVB10 port, unchecked here. Where DarwinBoot puts the
-  kernel's pages is known only from the first log; the NVMe window accepts any address below 1 TiB.
+- `dts/orangepi5.dts` memory node and `payload.dram_size`: 4 GiB at `0x100000000`. The firmware's map (first run) has System RAM
+  `0x100000000` + `0x100000000` above 4 GiB, so the node matches the upper bank exactly; the 3.75 GiB below the MMIO window (RAM
+  `0x9400000` + `0xe6c00000`, and `0x7f0000` + `0x7c10000` below OP-TEE) is not in the ADT. U-Boot also reports 256 MiB at
+  `0x2f0000000` that edk2 does not map. The kernel boots with the placeholder.
+- `payload.adt.chip_id`, `payload.adt.owned_memory_size` (2 GiB): copied from the EVB10 port; the kernel boots with them. The Data RAM
+  disk fallback prints `data-ram: no memory for 2048 MiB` (it keeps a 9 MiB one); with `nvme-data-persist=1` Data is on the drive and
+  this does not matter.
 - The drive's real sector count: the installer builds the backup GPT for whatever the drive has (a 128 GB drive has about 250 million sectors).
 - No display, GPU, input, audio or network driver is in the kernel: HDMI shows the firmware's screens only; the kernel speaks on the serial port.
 
