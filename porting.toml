@@ -179,18 +179,25 @@ id = "display"
 status = "planned"
 components = []
 paths = ["package/OrangePi5Display/**"]
-inputs = ["HDMI0 from VOP2 video port 0 (the EVB10 drives a panel through video port 2), UEFI GOP frame buffer, monitor mode chosen by EDID."]
+inputs = ["HDMI0 from VOP2 (the firmware uses video port 2 and Esmart window 2; the EVB10 drives a panel through video port 2 too, with its own DSI/panel values), the UEFI GOP frame buffer, monitor mode chosen by EDID."]
 configuration = ["The first milestone uses the GOP frame buffer DarwinBoot publishes (component GopFramebuffer, offline-legacy-gop=1); a VOP2 scanout driver on the Esmart window of video port 0 follows for frame rate."]
 procedure = ["Boot the kernel with the GOP frame buffer and look at the monitor; then adapt the EVB10 VOP2 code to video port 0 and the monitor timing."]
-findings = ["The EVB10 VOP2 constants (evb10-vop, evb10-fb-w, evb10-fb-h, video port, window) are board specific; the Orange Pi 5 needs its own values."]
+findings = ["Observed (evidence/device-display-firmware-20261103.txt): the firmware detects HDMI0, reads the EDID (2 blocks, preferred mode 1920 x 1080 @ 60 Hz), sets VOP2 video port 2 with Esmart window 2 to 1920x1080p60 (VOP VP2 enable Esmart2[1920x1080->1920x1080@0x0] fmt[0] addr[0xE73D0000]; HDPTX PHY locked, DwHdmiQp in HDMI mode) and DarwinBoot hands the kernel the frame buffer 'video base=0xE73D0000 display=1 row=7680 width=1920 height=1080 depth=32' (8294400 bytes inside the 'runtime data' run 0xE73D0000-0xE7BC0000 of the memory map).", "Reported by the user (evidence/device-hdmi-watchdog-20261103.txt, not photographed): with vc_mirror=1 (entry xnu-hdmi) the kernel log scrolls as text on the monitor, so the kernel can write to that frame buffer; no display driver is in the kernel.", "Host-verified: the kernel built for this board already carries the original IOMobileGraphicsFamily, IOSurface and IOGPUFamily (kernel.json original_executable_sha256), which the EVB10's display pass needs as its reference candidate.", "The EVB10 display stack is a two-pass kernel build (configs/evb10_defconfig, then evb10_display_defconfig with CONFIG_XNU_NATIVE_LEGACY_DISPLAY=y; scripts/build-evb10-display.py, build-display-abi.py, build-native-legacy-display.py, build-link-stubs.py, build-evb10-hid.py) plus a board display backend (package/Evb10Display/NativeLegacyDisplay.cpp with a VOP2 direct-scanout path) and a 1040-line probe (package/LegacyDisplayProbe.cpp) that also starts HID, touch, Wi-Fi, audio, DVFS and the Mali; its VOP2 values are for the EVB10's panel (host reading of the sources)."]
 completion = ["The kernel draws the boot screen on the HDMI monitor and SpringBoard appears."]
-limits = ["Not started; needs the board and a monitor."]
-next_action = ["Record the GOP mode and the VOP2 state left by the firmware."]
+limits = ["Not started on the kernel side: nothing of the display archive is built for this board, the monitor shows the firmware's screens and the xnu-hdmi text mirror only.", "The pixel order of the frame buffer and the VOP2 registers the firmware leaves were not read (only its log lines)."]
+next_action = ["Port the EVB10 display pass to this board with the GOP frame buffer as the scanout (CPU copy, no VOP2 direct path, no Mali, touch or HID hardware): configs/orangepi5_display_defconfig, the archive scripts, a probe reduced to the display, then boot it and look at the monitor; later a VOP2 scanout of its own on video port 2 for frame rate."]
 
 [[area.evidence]]
 kind = "source"
 reference = "docs/bring-up.md"
 result = "Display milestones"
+
+[[area.evidence]]
+kind = "device"
+reference = "evidence/device-display-firmware-20261103.txt"
+result = "The firmware drives HDMI0 at 1920x1080p60 (VOP2 video port 2, Esmart 2) and DarwinBoot hands the kernel a 1920x1080 32-bit frame buffer at 0xE73D0000, row 7680"
+command = "cd uefi-orangepi5 && CAPTURE_ARGS=\"--send 'menu: shown' text:1 --send 'U-Boot v' ctrl-c --stop '<INTERRUPT>' 1 'at the U-Boot prompt'\" tools/board/capture-remote.sh memN 700 (lines of the firmware and DarwinBoot)"
+revision = "1cbc693ca1c335720f0c4ae48665320e05390b4d"
 
 [[area]]
 id = "input"

@@ -1,0 +1,62 @@
+What the firmware leaves on the HDMI output for the kernel (Orange Pi 5, 2026-11-03)
+==============================================================================
+
+Excerpt of one serial capture (memN of device-memory-20261103.txt: uefi-orangepi5 e1ac136, UniXNU-orangepi5 1cbc693, entry xnu): lines copied unchanged,
+time stamps in seconds since the capture started. The EDID dump (it carries the monitor's serial number) is left out, the lines about it are kept.
+Monitor: an HDMI monitor on HDMI0 (the EDID has 2 blocks, preferred mode 1920 x 1080 @ 60 Hz).
+
+1. Display detection and the mode the firmware chose
+-----------------------------------------------------
+[   7.388] DetectDisplays: HDMI0 status: Success
+[   7.388] DetectDisplays: Primary: HDMI0
+[   7.633] IdentifyDisplay: EDID with 2 blocks:
+[   7.637] EdidGetPreferredModeDetailed: Block 0: DTD 0: 1920 x 1080 @ 60 Hz (VIC 16)
+[   7.637] IdentifyDisplay: Sink Info:
+[   7.637]   IsHdmi:                  TRUE
+[   7.637]   HdmiInfo:
+[   7.641]     Hdmi20Supported:       FALSE
+[   7.641]     Hdmi20SpeedLimited:    FALSE
+[   7.641]     ScdcSupported:         FALSE
+[   7.641]   SelectableRgbRange:      TRUE
+[   7.641]   PreferredMode:
+[   7.641]     1920 x 1080 @ 60 Hz (VIC 16)
+[   7.641]     OscFreq: 148500  ClkActive: 0  DenActive: 0
+[   7.641]     HFrontPorch:   88  HSync:   44  HBackPorch:  148  HSyncActive: 1
+[   7.641]     VFrontPorch:    4  VSync:    5  VBackPorch:   36  VSyncActive: 1
+[   7.641] vp0 have layer nr:0[], primary plane: 2
+[   7.641] vp1 have layer nr:4[0 1 2 3 ], primary plane: 2
+[   7.641] vp2 have layer nr:4[6 7 8 9 ], primary plane: 8
+
+2. The controller set up (VOP2 video port 2, Esmart window 2, HDMI0 through the DesignWare HDMI QP and the HDPTX PHY)
+------------------------------------------------------------------------------------------------------------------
+[   8.081] LcdGraphicsSetMode: detailed mode clock 148500 kHz, flags[5]
+[   8.081]           H: 1920 2008 2052 2200
+[   8.081]           V: 1080 1084 1089 1125
+[   8.081]       bus_format: 100A
+[   8.081] [INIT]VOP update mode to: 1920x1080p60, type: HDMI0 for VP2
+[   8.085] DclkRate:148500,IfPixclkDiv;2,IfDclkDiv:4
+[   8.085] [VOP2](CalcCru)DclkRate     = 148500(divide: 0)
+[   8.085]                DclkCoreRate = 37125(divide: 2)
+[   8.085]                IfDclkRate   = 37125(divide: 2)
+[   8.085]                IfPixclkRate = 74250(divide: 1)
+[   8.085] VOP VP2 enable Esmart2[1920x1080->1920x1080@0x0] fmt[0] addr[0xE73D0000]
+[   8.085] HdptxRopllCmnConfig HdptxRopllCmnConfig start
+[   8.085] HdptxRopllCmnConfig HdptxRopllCmnConfig 1485000
+[   8.085] HdptxRopllCmnConfig HdptxRopllCmnConfig 2
+[   8.089] HdptxRopllCmnConfig HdptxRopllCmnConfig end
+[   8.089] HdptxPostEnablePll hdptx phy pll locked!
+[   8.089] DwHdmiQpSetup: Using HDMI mode
+[   8.089] HdptxPostEnableLane hdptx phy lane locked!
+[   8.089] GraphicsConsole video resolution 1920 x 1080
+[   8.089] Graphics Console Started, Mode: 2
+
+3. What the menu and DarwinBoot report (the same run)
+------------------------------------------------------
+[  13.343] UNIXNU: ui: graphics 1920x1080, scale 2, landscape layout
+[  13.358] UNIXNU: ui: graphics 1920x1080, scale 2, landscape layout
+[  14.200] DARWINBOOT: video base=0xE73D0000 display=1 row=7680 width=1920 height=1080 depth=32
+[  14.206] video    base 0xE73D0000  1920x1080  row 7680 bytes  32 bpp
+
+Host reading (not a hardware observation): the frame buffer is 1920 x 1080 x 4 bytes with a row of 7680 bytes = 8294400 bytes, inside the 0x7F0000-byte
+"runtime data" run 0xE73D0000-0xE7BC0000 of the firmware memory map (section 6 of device-memory-20261103.txt lists that run), so it stays where it is after
+ExitBootServices. Not recorded yet: the pixel order of the frame buffer, and the VOP2 registers (only the firmware's own log lines above).
