@@ -100,6 +100,7 @@
 
 #include "Gpt.h"
 #include "NvmeHost.h"
+#include "PcieWindows.h"
 #include "RootManifest.h"
 
 // xnu's own device-memory mapper (osfmk/arm/machine_routines.h), as the platform code uses it
@@ -1578,11 +1579,6 @@ constexpr uint64_t kPcieDbi = 0xa41000000ull;      // the root port's own config
 // The iATU CFG0 region onto bus 1 behind the root port: 00:00.0 is the drive. The region is 64 KiB wide (the granule); only the first
 // 4 KiB are the function's configuration space, and +0x8000 (device 1) must never be touched, the firmware saw the bus hang on it.
 constexpr uint64_t kPcieCfg0 = 0xa36500000ull;
-constexpr uint64_t kPcieMem32Bus = 0xf0000000ull;  // PCIE_MEM32_BUS_BASE: the 128 MiB of 32-bit space BARs are assigned in...
-constexpr uint64_t kPcieMem32Size = 0x08000000ull;
-constexpr uint64_t kPcieMem32Cpu = 0xa38000000ull;  // ...and where the CPU reaches it (an iATU memory region with a translation)
-constexpr uint64_t kPcieMem64Cpu = 0xa00000000ull;  // 64-bit BARs: the bus address is the CPU address
-constexpr uint64_t kPcieMem64Size = 0x30000000ull;
 constexpr uint32_t kApbLtssm = 0x300;
 constexpr uint32_t kDbiLinkStatus = 0x80;
 constexpr uint32_t kPciCommand = 0x04, kPciClass = 0x08, kPciBar0 = 0x10, kPciBar1 = 0x14, kPciCapabilities = 0x34;
@@ -1663,13 +1659,9 @@ bool NativeNvme::bringUpPcie() {
   if (!bus) {
     IOLog("NativeNvme: pcie: BAR0 is not assigned (%#x %#x)\n", low, high);
     return false;
-  } else if (bus >= kPcieMem32Bus && bus < kPcieMem32Bus + kPcieMem32Size && !wide) {
-    cpu = bus - kPcieMem32Bus + kPcieMem32Cpu;
-  } else if (bus >= kPcieMem64Cpu && bus < kPcieMem64Cpu + kPcieMem64Size) {
-    cpu = bus;
-  } else {
-    IOLog("NativeNvme: pcie: BAR0 %#llx (%s) lies in none of the windows the firmware set up (32-bit %#llx+%#llx, 64-bit %#llx+%#llx)\n",
-          ull(bus), wide ? "64-bit" : "32-bit", ull(kPcieMem32Bus), ull(kPcieMem32Size), ull(kPcieMem64Cpu), ull(kPcieMem64Size));
+  } else if (!pcie::barToCpu(bus, kBar0Bytes, &cpu)) {
+    IOLog("NativeNvme: pcie: BAR0 %#llx (%s) lies in none of the windows the firmware set up (32-bit bus %#llx+%#llx, 64-bit %#llx+%#llx)\n",
+          ull(bus), wide ? "64-bit" : "32-bit", ull(pcie::kMem32Bus), ull(pcie::kMem32Size), ull(pcie::kMem64Cpu), ull(pcie::kMem64Size));
     return false;
   }
   IOLog("NativeNvme: pcie: BAR0 %#llx (%s, %sprefetchable) is at CPU address %#llx\n", ull(bus), wide ? "64-bit" : "32-bit",
