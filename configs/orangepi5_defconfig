@@ -2,7 +2,8 @@
 # (board.toml [kernel] config_fragments). CONFIG_XNU_<NAME> becomes XNU_<NAME> in the kernel build;
 # y and n become 1 and 0, {tree} in a string becomes the build tree.
 #
-# Console and storage: the NVMe driver (package/Rk3588Nvme). No display, GPU or input driver yet.
+# Console and storage: the NVMe driver (package/Rk3588Nvme). This is the display-less configuration (pass A); configs/orangepi5_display_defconfig
+# adds the display archive and is the one the image uses. scripts/build-orangepi5-kernel.sh builds the two in that order. No GPU or input driver yet.
 
 # --- what the ARM64 and OS profiles enable that this board does not use ------------------------------
 CONFIG_XNU_NATIVE_ADRENO=n

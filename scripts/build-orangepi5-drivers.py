@@ -5,6 +5,7 @@ Components of the UniXNU catalog (ArmDTPlatform, ArmCpu) are built by `component
 catalog does not carry:
 
     build/rk3588-nvme/libRk3588Nvme.a      package/Rk3588Nvme  (bind-nvme-storage.py makes the archive)
+    build/native-legacy-display/, native-gop-presenter/, apple-key-store-state/   objects of the display archive (build-native-legacy-display.py)
 
 An XNU driver has to be compiled with the same flags, the same SDK and the same deployment target as the kernel object it lives next to, or
 the Mach-O it produces will not link or will not run. The kernel build records the exact command for every object it compiles in a
@@ -13,8 +14,8 @@ kits/orangepi5 in the build tree; catalog drivers are under drivers/.
 
   python3 scripts/build-orangepi5-drivers.py Rk3588Nvme
 
-Derived from build-evb10-drivers.py of UniXNU-evb10 (the display, Wi-Fi, audio and Mali entries are left out until this board has those
-drivers), which is derived from UniXNU-sheng's scripts/build-arm-driver.py, BSD-2-Clause-Patent, Copyright (c) 2026, UniXNU contributors.
+Derived from build-evb10-drivers.py of UniXNU-evb10 (the Wi-Fi, audio, touch, HID and Mali entries are left out until this board has those
+drivers; the display entries are the EVB10's without its fork), which is derived from UniXNU-sheng's scripts/build-arm-driver.py, BSD-2-Clause-Patent, Copyright (c) 2026, UniXNU contributors.
 """
 import argparse
 import json
@@ -35,6 +36,15 @@ COMPONENTS = {
     # the absolute symbols for the original code. This script only leaves the object (and removes a stale archive), so the kernel link
     # cannot pick up a driver that was never bound.
     'Rk3588Nvme': (('kits/orangepi5/Rk3588Nvme/NativeNvme.cpp',), 'rk3588-nvme', ('build/storage-abi/include',), True),
+    # The display archive (scripts/build-native-legacy-display.py, run through scripts/build-orangepi5-display.py). These leave an object only
+    # ('object'): that script generates the original-class header NativeLegacyDisplay includes (hence the include of its own output
+    # directory), binds the objects to the original IOMobileFramebufferLegacy and makes the archive. drivers/GopFramebuffer and
+    # drivers/AppleKeyStoreState are the UniXNU components of those names; NativeLegacyDisplay is the unforked one (the EVB10 forks it for
+    # its VOP2 direct scanout, which this board does not have).
+    'NativeLegacyDisplay': (('drivers/GopFramebuffer/NativeLegacyDisplay.cpp',), 'native-legacy-display',
+                            ('build/native-legacy-display', 'drivers/GopFramebuffer'), 'object'),
+    'NativeGOPPresenter': (('drivers/GopFramebuffer/NativeGOPPresenter.cpp',), 'native-gop-presenter', (), 'object'),
+    'NativeKeyStoreEvents': (('drivers/AppleKeyStoreState/NativeKeyStoreEvents.cpp',), 'apple-key-store-state', (), 'object'),
 }
 
 # The record of a kernel object compiled for the same machine configuration and
@@ -158,8 +168,8 @@ def main():
     archive = out / ('lib' + args.component + '.a')
     archive.unlink(missing_ok=True)
     if bound:
-        print('%s: -Werror build and ARM64/iOS 17 object audit passed; the archive comes from '
-              'scripts/bind-nvme-storage.py' % args.component)
+        maker = 'scripts/bind-nvme-storage.py' if bound is True else 'scripts/build-native-legacy-display.py'
+        print('%s: -Werror build and ARM64/iOS 17 object audit passed; the archive comes from %s' % (args.component, maker))
         return
     subprocess.run([ar_tool(), 'rcs', str(archive)] + [str(path) for path in objects], check=True)
     print('%s: -Werror build and ARM64/iOS 17 object audit passed -> %s'
