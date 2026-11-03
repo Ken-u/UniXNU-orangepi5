@@ -1,0 +1,43 @@
+Host verification of the Orange Pi 5 display pass (nothing of this ran on the board).
+
+Machine: build host, Ubuntu 20.04, no root (user namespace wrapper). The build log of 2026-11-03 ends at 18:30 (about five minutes).
+Device repository: f2831c1b913f29d664727a73847853a15450c4f3 (feat(display): second kernel pass with the GOP-backed legacy display)
+UniXNU: 066c8d8 (pinned), SoC repository: Ken-u/UniXNU-rk3588-common f37d1002d11fb0ced99a79a0cef8f9930757629f at the build time
+(the later a37ea4b changes tools/board only).
+
+1. Kernel, two passes (source host/env.sh && cd UniXNU-orangepi5 && scripts/build-orangepi5-kernel.sh):
+   The previous kernel.json (configs/orangepi5_defconfig) already carries com.apple.iokit.IOMobileGraphicsFamily, so pass A was skipped and
+   only configs/orangepi5_display_defconfig was built (output out/orangepi5/ipados-17.7.11-21H461/orangepi5_display). The first, bootstrap
+   make of a pass fails at the link on the undefined _native_legacy_display_probe / _native_legacy_display_late_probe (and the _native_emmc_*
+   symbols of the vendored EVB10 patches); the script goes on after it (that make only produces the compile records the archive steps need).
+   The archive steps then ran, the final make linked, and the prelink step wrote the kernel:
+     archive-12-build-orangepi5-display (build-orangepi5-display.py): build-link-stubs.py, build-display-abi.py,
+       build-native-legacy-display.py (NativeLegacyDisplay.cpp + NativeGOPPresenter.cpp + package/LegacyDisplayProbe.cpp +
+       package/KeyStoreProbe.cpp + NativeKeyStoreEvents.cpp, compiled with --target=arm64-apple-ios17.0 -Wall -Wextra -Werror after audit-mobile-graphics-legacy.py checked the original family's ABI)
+     build/native-legacy-display/libNativeLegacyDisplay.late.a  sha256 95175c9ff639cec5f60d561f23ef3916fe60ee98b85e67052fb1e22c3ac3a34a
+     build/link-stubs/libLinkStubs.a                            sha256 5c407bd025f120eae3c8dba926514728b6946f416a474f346d3fa483df626d7d
+     kernel.macho: 51286016 bytes, sha256 2425c31b44b8eb63d13bff3078cf3123f99de8808578423ad636b294504dcf21, crc32 f7215c41
+     PASS: the kernel carries the audited original IOStorageFamily (f18b4df865405f2a), 18 bound addresses inside it
+   build-report.json of the display archive (values as the build wrote them):
+     original candidate (IOMobileGraphicsFamily of the pass-A kernel) sha256 178d2e1fd5415e47679e8ae6b48d12691d2dc31324572458acfc5ac92769b617,
+     original audit sha256 552b0f1b4260705c2e98f88ff8b4729b1c65bc83c2a7e6c5b011546d8d0baae4,
+     358 virtual entries of IOMobileFramebufferLegacy: 24 own, 154 inherited native, 7 guarded backend leaves; 193 symbols bound to addresses
+     inside the original executable (173 of them opaqueNNN slots, plus the constructor, destructor, vtable, init, probe, getWorkLoop and the
+     like, addresses 0xfffffff005786... to 0xfffffff0057a0...), original_instructions_modified false.
+   The size is 131072 bytes (51286016 - 51154944) larger than the console kernel of host-nvme-storage-20261101.txt.
+
+2. Payload (REBUILD=1 tools/board/make-bundle.sh of uefi-orangepi5, which now selects orangepi5_display_defconfig): payload.img of the display
+   kernel; EFI/UniXNU/Payloads/kernel.macho.trustcache crc32 e3343405 (the same trust cache as before), unixnu.toml crc32 fe909e88 with four
+   entries; kernel arguments 553 bytes (limit 1000), among them offline-mobile-graphics-load=1 offline-legacy-register=1 offline-legacy-phase=4
+   offline-legacy-gop=1 offline-legacy-unit-scale=2 offline-legacy-pm=1 offline-legacy-validate=1 offline-legacy-transfer=1
+   offline-legacy-cpu-present=1 offline-key-events=1 sheng-aks=1 sheng-vsync=60 opi5-hid=1; entry xnu-hdmi adds vc_mirror=1.
+   The ADT differs from build to build (kernel.macho.adt crc32 035bde5f, then 9f9f3566 for the same inputs); the kernel does not.
+
+3. Written to the ESP over U-Boot (uefi-orangepi5/docs/first-boot.md section 9): kernel.macho.adt 14112 bytes crc32 035bde5f and unixnu.toml
+   3042 bytes crc32 fe909e88 were read back by fatload and agree; kernel.macho went in four pieces (each crc32 agreed in U-Boot:
+   20eea4c3, 615c096f, 4b22a049, 3b22a387), "51286016 bytes written", "51286016 bytes read" at fatload; the final crc32 over the whole file
+   aborted U-Boot (the buffer reached 0x8400000), so the written file is NOT verified. The board hung there and needs its power cycled.
+
+What this does not show: that the display classes load, that the original IOMobileFramebufferLegacy initialises on this board, that the
+copy into the frame buffer at 0xE73D0000 produces a picture, and what SpringBoard does without a GPU. The serial lines to read at the next
+boot start with "opi5: display".

@@ -75,7 +75,7 @@ test notices), `tests/test-root-manifest.cpp`, `tests/check-gpt-image.cpp` (the 
 | M0 | UEFI runs on the board: serial log, HDMI picture, NVMe drive visible | Board, serial adapter, U-Boot in the SPI NOR with `ums` and a Mac to write the drive (or a way to write the SPI NOR) | done: serial log, NVMe ESP and drive seen, HDMI shows the firmware screens and (xnu-hdmi) the scrolling kernel log |
 | M1 | The kernel starts from the NVMe ESP payload; the driver finds the drive (`nvme=1` shows PCIe, NVMe identify, GPT, probe) | M0 | done (2026-11-03) |
 | M2 | Root and Data mount, `launchd` runs | A written userdata partition | done (2026-11-03): root windows, Data formatted at the first boot, `launchd` up; a second boot over the formatted Data window is still to be seen |
-| M3 | The boot screen on the HDMI monitor through the GOP frame buffer | M1 | text mirror done (`xnu-hdmi`, `vc_mirror=1`); the iPadOS boot screen needs the display driver |
+| M3 | The boot screen on the HDMI monitor through the GOP frame buffer | M1 | text mirror done (`xnu-hdmi`, `vc_mirror=1`); the display kernel (original IOMobileFramebufferLegacy on UniXNU's GOP backend) is built and its payload is on the ESP, not yet run (`evidence/host-display-build-20261103.txt`) |
 | M4 | VOP2 scanout on video port 0, Mali composition, frame rate | M2, M3 | not started |
 | later | USB input (xHCI + HID), audio, Ethernet and Wi-Fi, microSD | | |
 
@@ -108,9 +108,14 @@ test notices), `tests/test-root-manifest.cpp`, `tests/check-gpt-image.cpp` (the 
 
 ```sh
 source ../host/env.sh        # or the equivalent environment of the machine that builds
-scripts/build-orangepi5-kernel.sh                  # kernel (20 to 40 minutes from scratch, less when incremental)
+scripts/build-orangepi5-kernel.sh                  # kernel, two passes (20 to 40 minutes from scratch, less when incremental)
 cd ../uefi-orangepi5 && REBUILD=1 tools/board/make-bundle.sh      # payload + the bundle for the board
 ```
+
+The kernel is built twice: `configs/orangepi5_defconfig` (console and NVMe, no display) and then `configs/orangepi5_display_defconfig`, whose
+archive step (`scripts/build-orangepi5-display.py`) takes the original IOMobileGraphicsFamily code out of the first kernel. The first pass is
+skipped when the previous kernel already carries that family. `DISPLAY_BUILD=0 scripts/build-orangepi5-kernel.sh` builds only the display-less
+kernel; `KERNEL_CONFIG=orangepi5_defconfig` makes `make-bundle.sh` bundle that one (default: the display kernel).
 
 The script needs `.env` (see `.env.example`) and CMake 3.19.6 or newer. `scripts/check-vendored-patches.sh` compares the vendored
 EVB10 patches (`patches/xnu/VENDORED.md`) with the sibling repository.
