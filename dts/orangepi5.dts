@@ -6,14 +6,14 @@
 	model = "Orange Pi 5";
 	compatible = "xunlong,orangepi-5", "rockchip,rk3588s", "rockchip,rk3588";
 
-	// The same bank the EVB10 uses: 4 GiB at 0x100000000. The board this port is built for has 8 GiB, which is 3.75 GiB below
-	// 0xf0000000 and 4.25 GiB from 0x100000000, so the bank exists in full (a 4 GiB board would only have 256 MiB above 4 GiB).
-	// Check against the memory map in the firmware log of the first run and fix it here and in board.toml (dram_size).
-	// The kernel's own pages are taken by DarwinBoot from the UEFI memory map (payload.adt.owned_memory_size); where that
-	// window lies is not known until the first log, and the NVMe driver accepts any address below 1 TiB for its DMA window.
-	memory@100000000 {
+	// The 8 GiB of the board are 3.75 GiB below 0xf0000000, 4 GiB from 0x100000000 and 256 MiB that U-Boot places at 0x2f0000000 (the
+	// firmware maps that last piece nowhere). The kernel owns one contiguous window that DarwinBoot takes from a run of free memory of the
+	// UEFI map; the largest run (2674 MiB) starts at 0x40000000, so the node is the window's worth of it from there, not all the DRAM.
+	// The generator allows one range, and the kernel does not read this node (the window comes from boot_args, DarwinBoot's choice).
+	// payload.dram_size and payload.adt.owned_memory_size in board.toml follow it (the window is 2.5 GiB inside the 2.6 GiB run).
+	memory@40000000 {
 		device_type = "memory";
-		reg = <1 0x00000000 1 0x00000000>;
+		reg = <0 0x40000000 0 0xA0000000>;
 	};
 };
 

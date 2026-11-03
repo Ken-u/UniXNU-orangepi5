@@ -52,9 +52,9 @@ volume = "OPI5ESP"
 size_mib = 256
 loader = "firmware"
 title = "UniXNU Orange Pi 5"
-# The same 4 GiB bank as the EVB10's: it exists on the 4 GiB board too in the part below 0xf0000000 plus a little above, and DarwinBoot takes the
-# kernel's pages from the UEFI memory map anyway. Check the memory map of the first run's firmware log (8 GiB of DDR are fitted here).
-dram_size = "0x100000000"
+# The size of the memory node of the device tree: the window's worth of DRAM at the start of the largest run of free memory in the firmware's
+# map (0x40000000 to 0xE72DA000, 2674 MiB; evidence/device-memory-20261103.txt). payload.dram_size must equal it.
+dram_size = "0xA0000000"
 panic_screen = false
 # The profile's list ends with a different second digest: the second one here covers the SystemOS cryptex of the owner image (the same image
 # as the EVB10's, see its board.toml). The first is the profile's own.
@@ -96,8 +96,11 @@ kernel_args = [
 [payload.adt]
 chip_id = "0x1"
 unique_chip_id = "required"
-# The memory the kernel owns: DarwinBoot takes this many contiguous bytes from the UEFI memory map (2 GiB fits the low bank).
-owned_memory_size = "0x80000000"
+# The memory the kernel owns: DarwinBoot takes this many contiguous bytes from the first run of free memory of the UEFI map that is long enough,
+# from the run's first 2 MiB boundary on. The largest run on this board is 2674 MiB at 0x40000000 (the firmware leaves 2669 MiB of it at hand-off); requests of
+# 2.75, 2.82, 3 and 3.5 GiB were refused (no run that long: the 4 GiB above 0x100000000 is split at 0x180000000 by a Realtek UNDI driver that
+# can only load at that address) and 2.5 GiB, which leaves about 100 MiB of margin, started the kernel (evidence/device-memory-20261103.txt).
+owned_memory_size = "0xA0000000"
 # The Data seed is a raw APFS container, so the ADT carries the RAMDisk placeholder, not the packed one.
 packed_data_ramdisk = false
 # The APFS volume inside the OS window of the root image; a property of the IPSW, so the same as on the EVB10.
