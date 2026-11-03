@@ -4,7 +4,7 @@ Status (2026-11-03): **the console kernel boots on the board from the NVMe drive
 `evidence/device-first-boot-20261103.txt`): U-Boot starts the launcher from `boot.scr`, the firmware shows 8 GiB, finds the NVMe ESP and
 starts DarwinBoot, the kernel identifies the drive, reads the GPT, publishes the root windows and a persistent Data window, and `launchd`
 reaches "Early boot complete" 30 s after the hand-off; the kernel then runs the 400 s until the capture ends without a panic. Not done:
-display (HDMI shows the firmware's screens only and nobody has looked at the monitor), GPU, input, the real memory map in the ADT. The
+a real display (the `xnu-hdmi` entry mirrors the kernel log as text on the HDMI monitor and the log scrolled there, nothing is drawn by a display driver), GPU, input, the real memory map in the ADT. The
 procedure for the board is `uefi-orangepi5/docs/first-boot.md`.
 
 ## Board
@@ -72,10 +72,10 @@ test notices), `tests/test-root-manifest.cpp`, `tests/check-gpt-image.cpp` (the 
 
 | | Goal | Needs | State |
 | --- | --- | --- | --- |
-| M0 | UEFI runs on the board: serial log, HDMI picture, NVMe drive visible | Board, serial adapter, U-Boot in the SPI NOR with `ums` and a Mac to write the drive (or a way to write the SPI NOR) | serial log, NVMe ESP and drive seen: done; HDMI picture not looked at |
+| M0 | UEFI runs on the board: serial log, HDMI picture, NVMe drive visible | Board, serial adapter, U-Boot in the SPI NOR with `ums` and a Mac to write the drive (or a way to write the SPI NOR) | done: serial log, NVMe ESP and drive seen, HDMI shows the firmware screens and (xnu-hdmi) the scrolling kernel log |
 | M1 | The kernel starts from the NVMe ESP payload; the driver finds the drive (`nvme=1` shows PCIe, NVMe identify, GPT, probe) | M0 | done (2026-11-03) |
 | M2 | Root and Data mount, `launchd` runs | A written userdata partition | done (2026-11-03): root windows, Data formatted at the first boot, `launchd` up; a second boot over the formatted Data window is still to be seen |
-| M3 | The boot screen on the HDMI monitor through the GOP frame buffer | M1 | not started |
+| M3 | The boot screen on the HDMI monitor through the GOP frame buffer | M1 | text mirror done (`xnu-hdmi`, `vc_mirror=1`); the iPadOS boot screen needs the display driver |
 | M4 | VOP2 scanout on video port 0, Mali composition, frame rate | M2, M3 | not started |
 | later | USB input (xHCI + HID), audio, Ethernet and Wi-Fi, microSD | | |
 

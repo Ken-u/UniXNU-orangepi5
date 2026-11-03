@@ -1,0 +1,49 @@
+HDMI and the hardware watchdog on the Orange Pi 5 (2026-11-03)
+==================================================================
+
+Excerpts of serial captures (lines copied unchanged, time stamps in seconds since the capture started, long lines cut at 200
+characters), the observation of the person at the board, and two timestamps from the board host. The raw captures are not stored.
+
+Device      Orange Pi 5, HDMI monitor on HDMI0, NVMe drive as in device-first-boot-20261103.txt
+Kernel      UniXNU-orangepi5 b1d3c18fc1ba985101e5d3c372d18e59d0378df4, kernel.macho sha256 178d2e1fd5415e47679e8ae6b48d12691d2dc31324572458acfc5ac92769b617
+Commands    CAPTURE_ARGS="--send 'menu: shown' text:2" tools/board/capture-remote.sh hdmi3 1500 /dev/serial/by-id/<adapter>   (hdmi3)
+            CAPTURE_ARGS="--send 'menu: shown' text:2" tools/board/capture-remote.sh hdmi2 1100                                   (hdmi2, the xnu run before)
+
+1. The xnu-hdmi entry (hdmi3, 2026-11-03 11:55; area firmware)
+------------------------------------------------------------
+[  31.969] UNIXNU: menu: key 2, booting 1
+[  31.969] UNIXNU: menu: key 2, booting 1
+[  31.969] UNIXNU: boot: entry 'xnu-hdmi' (UniXNU Orange Pi 5 (kernel log on HDMI too))
+[  31.969] UNIXNU: boot: entry 'xnu-hdmi' (UniXNU Orange Pi 5 (kernel log on HDMI too))
+[  32.376] DARWINBOOT: video base=0xE7AC0000 display=1 row=2560 width=640 height=480 depth=
+[  32.376] DARWINBOOT: command line: -v serial=3 debug=0x10014e -enable_kprintf_spam nvme=4
+[  32.376] -sgi=0 cpumask=31 sched-slowcpus=240 wdt-kick=1800 vc_mirror=1
+[  32.428] ?DARWINBOOT: hand-off to the kernel
+[  32.428] video    base 0xE7AC0000  640x480  row 2560 bytes  32 bpp
+[  61.376] com.apple.xpc.launchd|1969-12-31 16:00:40.900611 <Notice>: boot-args = -v serial=3 debug=0x10014e -enable_kprintf_spam nvme=4 offline-apfs-load=1 nvme-root-trust=1 emmc-systemos-union=1 emm
+[  62.209] com.apple.xpc.launchd|1969-12-31 16:00:41.687188 <Notice>: launchd logging initialized. name: com.apple.xpc.launchd pid: 1
+[  62.766] com.apple.xpc.launchd|1969-12-31 16:00:42.281296 (boot) <Notice>: Early boot complete. Continuing system boot.
+[  62.766] [System Event] [1014809913] [INFO] [Subsystem: launchd] [Event: boot] Early boot complete. Continuing system boot.
+
+2. What the monitor showed
+------------------------------
+Reported by the person at the board while the xnu-hdmi run was up (it handed the kernel over at about 11:55): text scrolling on the monitor (the kernel log). Not
+photographed; the picture quality (colours, position, readability) was not described beyond "scrolling".
+
+3. The watchdog after the feeding stops (hdmi2 and the board host; area firmware)
+--------------------------------------------------------------------------
+[ 425.844] NativeNvme: wdt-kick: feed 360: count 0x78d8938b -> 0x7ffffffe (CR 0x9 STAT 0x0)
+[ 430.846] NativeNvme: wdt-kick: 1800 s are over, not feeding the watchdog any more
+# capture end 779.632 s, 876 raw bytes
+hdmi2 started 11:40:54 (host clock), so "1800 s are over" was at about 11:48:04 and the DW watchdog (about 89 s) was due about 11:49:33.
+Nothing more came through that capture: the FT232 adapter dropped off the bus and came back as /dev/ttyUSB1, and the capture kept reading the dead
+device. Board host, 11:54:16:
+  crw-rw---- 1 root dialout 188, 1 11月  3 11:49 /dev/ttyUSB1
+  usb-FTDI_FT232R_USB_UART_<id>-if00-port0 -> ../../ttyUSB1        (link made 11月  3 11:49)
+A later capture of the same line (hdmi3, started 11:54:42 on the by-id path) found the board in the boot loop: the first lines are a
+probe-run kernel (the default xnu-probe entry) ending in the expected root-wait panic, and the restart:
+[  14.388] NativeNvme: wdt-kick: feed 12: count 0x78d893da -> 0x7ffffffe (CR 0x9 STAT 0x0)
+[  19.642] panic(cpu 4 caller 0xfffffff00798c150): Failed to mount root device @IOKitBSDInit.cpp:984
+[  20.608] U-Boot v5-gc507c92ef837-261013-dirty #<builder> (Nov 03 2026 - 09:13:13 +0800)
+So the board had been reset some time after the feeding stopped and then ran by itself. The reset was NOT seen on the serial line; that
+it was the watchdog is an inference from the time (11:49, matching the 89 s) and from the adapter dropping at that moment.
