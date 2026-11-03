@@ -1,0 +1,42 @@
+Host verification of the Orange Pi 5 launcher: U-Boot in the SPI NOR starts the firmware from the NVMe drive (nothing of this ran on the board).
+
+Machine: build host, Ubuntu 20.04, no root, clang r547379, Python 3.12, mkimage 2021.01 (u-boot-tools from the Ubuntu archive, unpacked
+without root, used only to check the output of tools/board/make-bootscr.py).
+Firmware repository: Ken-u/uefi-orangepi5 34fb4cfa4fa32f5e1a0e8eaa341724ad72abb000 (launcher volume d5b57c9d, stub and boot.scr 96b8adde).
+
+1. Launcher volume: ./build.sh -b DEBUG -L  (-D RK_NOR_FLASH_ENABLE=FALSE)
+     BL33_AP_UEFI [46%Full] 5242880 (0x500000) total, 2455000 (0x2575d8) used
+     -> out/launcher/BL33_AP_UEFI-orangepi5-launcher.Fv, 5242880 bytes
+   No platform of the edk2-rk3588 tree sets RK_NOR_FLASH_ENABLE=FALSE, so this configuration is new there. DarwinBoot and UniXNU never call
+   SetVirtualAddressMap (rg over UniXNU drivers/DarwinBoot and package: only ExitBootServices appears), the one event on which RkFvbDxe
+   dereferences the missing SPI protocol.
+
+2. Entry point of a volume (tools/stub/fv-entry.py: the AArch64 B at the start of the volume, its target):
+     uefi-evb10 BL33_AP_UEFI-evb10.Fv            first instruction 0x14000500 = B +0x1400 -> 0x1400 (what the EVB10 stub hard-codes)
+     OPi5 NOR build and launcher volume           0x1400 both
+     a file that is not a volume                  refused (no _FVH signature)
+
+3. The stub (tools/stub/launcher.S) against the EVB10 stub that ran on a board (uefi-evb10 tools/stub/probe.S, built from the same
+   volume): llvm-objdump -d of both, addresses and labels masked: every instruction line identical. What differs: the strings
+   (LAUNCHER: instead of PROBE:) and the constants after the code (image_size), plus the text_offset field of the header (0xa000000 here,
+   0 there).
+
+4. boot.scr (tools/board/make-bootscr.py boot.cmd): cmp against
+     SOURCE_DATE_EPOCH=0 mkimage -A arm64 -O linux -T script -C none -n "UniXNU launcher" -d boot.cmd ref.scr
+   -> byte for byte identical (1209 bytes); mkimage -l and dumpimage -l read it back. An early version that padded the data to four bytes
+   differed in the size field, which is how the comparison earned its place.
+
+5. ESP (tools/board/make-bundle.sh): out/disk/esp.img sha256 a7f66d99d647fd4d4e13dbc93aaffaada74a60cfdc8a8da66a5abedb861b8768
+     mdir: EFI/, uefi-launcher.img (5251560 bytes), boot.scr (1209 bytes), 198364160 bytes free
+     mcopy back out of the image: both files cmp equal to out/launcher/*
+     fsck.vfat -n: 11 files, 128760/516190 clusters, no errors
+   The ESP holds no extlinux/extlinux.conf: U-Boot's distro boot would run that before boot.scr.
+
+6. Disk files (tools/board/make-disk-image.sh, 128035676160-byte drive): nvme-install.py --write into a sparse file ends with
+   "OK: gpt, esp, root, data verified"; head.img 9652142080 bytes, tail.img 16896 bytes (sha256 47b4b4d6... unchanged from the
+   earlier run: the backup GPT is deterministic), esp.img 268435456 bytes. The new head.img equals the one written to the drive before
+   the launcher existed everywhere except the ESP region, and its ESP region equals the new esp.img: writing the old head.img and
+   then esp.img (dd of=/dev/rdiskN bs=1m seek=1) gives the new head.img's content.
+
+Not run on the board: booti with the stub, the stub's copy and jump, the watchdog arm, edk2 starting after U-Boot has used the drive, the
+UART at 0xfeb50000 being the console of this board's U-Boot.

@@ -22,8 +22,13 @@ host. Every "expected" below is a plan, not an observation. The procedure for th
 
 ## Boot flow
 
-1. The firmware is the SPI NOR image of `uefi-orangepi5`: TF-A (BL31) at EL3 with PSCI over SMC, OP-TEE, and the UEFI
-   volume with the UniXNU modules (`DarwinBoot`, the UniXNU menu and the boot watchdog `UniXNUBootWdtDxe`).
+1. The firmware is the UEFI volume of `uefi-orangepi5` with the UniXNU modules (`DarwinBoot`, the UniXNU menu and the boot watchdog
+   `UniXNUBootWdtDxe`). It starts in one of two ways:
+   - **From U-Boot (the plan for this board).** The SPI NOR holds a U-Boot that the board's owner supplies (it has `nvme`, `ums`, `booti`
+     and distro boot; TF-A's BL31 comes with it). `boot.scr` on the ESP loads `uefi-launcher.img`, a stub with the volume inside, and
+     `booti`s it. The stub moves the volume to 0x200000, arms the hardware watchdog and jumps into it at EL2, the state TF-A leaves for
+     BL33 in the normal flash flow. The launcher volume has no SPI NOR variable store, so nothing writes the SPI.
+   - **From the SPI NOR.** `nor.img` of `uefi-orangepi5`: TF-A (BL31) at EL3 with PSCI over SMC, OP-TEE and the volume.
 2. UEFI initialises DRAM, PCIe, the NVMe controller and HDMI (GOP). `NvmExpressDxe` exposes the NVMe drive and the
    firmware finds the ESP on it.
 3. The ESP carries the payload: `kernel.macho`, the trust cache, the Data seed and `EFI/UniXNU/unixnu.toml`. `DarwinBoot` builds
@@ -64,7 +69,7 @@ test notices), `tests/test-root-manifest.cpp`, `tests/check-gpt-image.cpp` (the 
 
 | | Goal | Needs | State |
 | --- | --- | --- | --- |
-| M0 | UEFI runs on the board: serial log, HDMI picture, NVMe drive visible | Board, serial adapter, a way to write the SPI NOR | bundle ready |
+| M0 | UEFI runs on the board: serial log, HDMI picture, NVMe drive visible | Board, serial adapter, U-Boot in the SPI NOR with `ums` and a Mac to write the drive (or a way to write the SPI NOR) | bundle and launcher ready |
 | M1 | The kernel starts from the NVMe ESP payload; the driver finds the drive (`nvme=1` shows PCIe, NVMe identify, GPT, probe) | M0 | kernel and payload built |
 | M2 | Root and Data mount, `launchd` runs | A written userdata partition | image and installer ready |
 | M3 | The boot screen on the HDMI monitor through the GOP frame buffer | M1 | not started |
