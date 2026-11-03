@@ -4,7 +4,7 @@ Status (2026-11-03): **the console kernel boots on the board from the NVMe drive
 `evidence/device-first-boot-20261103.txt`): U-Boot starts the launcher from `boot.scr`, the firmware shows 8 GiB, finds the NVMe ESP and
 starts DarwinBoot, the kernel identifies the drive, reads the GPT, publishes the root windows and a persistent Data window, and `launchd`
 reaches "Early boot complete" 30 s after the hand-off; the kernel then runs the 400 s until the capture ends without a panic. Not done:
-a real display (the `xnu-hdmi` entry mirrors the kernel log as text on the HDMI monitor and the log scrolled there, nothing is drawn by a display driver), GPU, input. The kernel owns 2.5 GiB of the 8 GiB (the largest run the firmware leaves; see "Placeholders and open inputs"). The
+a real display (the `xnu-hdmi` entry mirrors the kernel log as text on the HDMI monitor and the log scrolled there, nothing is drawn by a display driver), GPU, input. The kernel owns 3.875 GiB of the 8 GiB, in the 4 GiB bank above `0x100000000` (see "Placeholders and open inputs"). The
 procedure for the board is `uefi-orangepi5/docs/first-boot.md`.
 
 ## Board
@@ -83,15 +83,19 @@ test notices), `tests/test-root-manifest.cpp`, `tests/check-gpt-image.cpp` (the 
 
 - Memory is measured, not a placeholder any more (`evidence/device-memory-20261103.txt`). The firmware prints its UEFI memory map
   (`MEMMAP:` lines, `UniXNUMemMapDxe`): the lower bank has free runs of 124 MiB, 849 MiB and 2674 MiB (`0x40000000` to `0xE72DA000`),
-  the 4 GiB above `0x100000000` two runs of about 2 GiB, because the prebuilt Realtek UNDI driver sits at `0x180000000` (DxeCore loads
-  an image at its linked address when that is free, `PcdImageLargeAddressLoad`). DarwinBoot takes the kernel's window from one run, first
-  fit, so the window is at most about 2.6 GiB: `payload.adt.owned_memory_size = 0xA0000000` (2.5 GiB at `0x4007C000`, about 100 MiB of margin);
-  3.5, 3 and 2.75 GiB were refused (`DARWINBOOT: boot refused: Out of Resources`), 2.5 GiB boots to `launchd`. The memory node of
-  `dts/orangepi5.dts` and `payload.dram_size` are that size at `0x40000000`; the kernel does not read the node, and the ADT cannot carry
-  two ranges, so the other bank is not usable by the kernel. The 256 MiB at `0x2f0000000` that U-Boot reports are mapped by edk2 nowhere.
-  More than 2.6 GiB needs the upper bank in one piece. Moving the Realtek driver (`PcdImageLargeAddressLoad=FALSE`) or building without the
-  network stack (`NETWORK_ENABLE=FALSE`) both stop the firmware in `AcpiTableDxe` (data abort, freed-pool pattern `0xAFAFAFAF` in the
-  registers) on this board; that crash comes first, and the kernel has not run above 4 GiB on this port.
+  and the 4 GiB above `0x100000000` is one run of 4096 MiB. DarwinBoot takes the kernel's window from one run, first fit, so the window
+  is `payload.adt.owned_memory_size = 0xF8000000` (3.875 GiB, 128 MiB below the end of the run): the kernel's physical start is
+  `0x10007C000`. 3.5 GiB and 4094 MiB boot to `launchd` too; a request that no run can hold is refused (`DARWINBOOT: boot refused: Out of
+  Resources`) and the menu then waits for a key, which is why the committed value keeps a margin. The memory node of `dts/orangepi5.dts`
+  (`memory@100000000`) and `payload.dram_size` are that size; the kernel does not read the node, and the ADT cannot carry two ranges, so
+  the lower bank (3.75 GiB, 2.6 GiB of it free) is not usable by the kernel. The 256 MiB at `0x2f0000000` that U-Boot reports are mapped
+  by edk2 nowhere.
+  The upper bank is in one piece because of two firmware fixes (`uefi-orangepi5` `dc08d7c`, `e1ac136`): the prebuilt Realtek UNDI driver no
+  longer loads at its linked address `0x180000000` (`PcdImageLargeAddressLoad=FALSE`; DxeCore put it there when free and split the bank
+  into two 2 GiB runs, so the first firmware could give the kernel 2.5 GiB at most), and the ACPI tables are linked so that the PPTT table,
+  not an 8-byte pointer clang puts in front of it, is first in its file (without that the firmware installed only five of eight tables
+  and the builds that moved the Realtek driver stopped in `AcpiTableDxe` with a data abort). If a firmware change splits the bank again,
+  the `MEMMAP:` lines before the menu show it.
   To change the window: edit `owned_memory_size` (2 MiB steps; keep `dram_size` and the memory node equal to the size), run
   `REBUILD=1 tools/board/make-bundle.sh` in `uefi-orangepi5`, and write `kernel.macho.adt` to the ESP.
 - `payload.adt.chip_id`: copied from the EVB10 port; the kernel boots with it. The Data RAM

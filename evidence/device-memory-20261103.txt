@@ -5,22 +5,31 @@ Excerpts of serial captures (lines copied unchanged, time stamps in seconds sinc
 cut, the serial number of the NVMe drive and the build tag of U-Boot replaced). Lines left out are said so. The raw captures are not stored.
 
 Device      Orange Pi 5 (RK3588S, 4 x 2048 MB reported by the firmware), NVMe drive as in device-first-boot-20261103.txt, HDMI monitor on HDMI0
-Captures    All 2026-11-03, tools/board/capture-remote.sh with CAPTURE_ARGS typing the menu key and Ctrl-C at the U-Boot banner (see section 7):
-            (the times are when each capture ended)
+Captures    All 2026-11-03, tools/board/capture-remote.sh with CAPTURE_ARGS typing the menu key and Ctrl-C at the U-Boot banner (see section 8).
+            The times are when each capture ended. Firmware as in the first run on the board, without and then with the memory map driver:
             mem1 12:54  window 0xE0000000 (3.5 GiB)             refused
             memA..memE  13:03-13:09, five more requests, among them 0xC0000000, 0xB0000000, 0xAFE00000 (2814 MiB) and 0xA0000000; the captures do not
                         carry the size and which letter was which size was not written down, so only memC (the one that booted, 0xA0000000 in its
                         DARWINBOOT line) is matched to a size here; A, B, D and E were refused
             memF 15:32  the first run of the firmware with the memory map driver, window 0xA0000000 (the map of section 1)
-            memG 15:41  firmware built with -D NETWORK_ENABLE=FALSE (section 5)
+            memG 15:41  built with -D NETWORK_ENABLE=FALSE, window 0xA0000000 (section 5)
             memH 15:53  window 0xA0000000, entry xnu, wdt-kick=150 (section 3)
-            memI 16:05  the committed board.toml, entry xnu, wdt-kick=400 (section 4)
-            memJ 16:09  firmware built with PcdImageLargeAddressLoad=FALSE, window 0xE0000000 (section 5)
+            memI 16:05  the committed 2.5 GiB configuration, entry xnu, wdt-kick=400 (section 4)
+            memJ 16:09  built with PcdImageLargeAddressLoad=FALSE, window 0xE0000000 (section 5)
+            With the ACPI fix (dc08d7c; sections 5 and 6):
+            memK 17:32  window 0xA0000000, wdt-kick=150
+            memL 17:39  with PcdImageLargeAddressLoad off too (e1ac136), window 0xE0000000, wdt-kick=150
+            memM 17:46  the same, window 0xFFE00000, wdt-kick=150
+            memN 17:58  the same, the committed window 0xF8000000, entry xnu, wdt-kick=400 (section 6)
 Firmware    uefi-orangepi5 e35d303 (UniXNUMemMapDxe) for memF, memH and memI: uefi-launcher.img 5251560 bytes, sha256
-            92e64d5a16ff935fc81053132fc1c4083d430573fb536c088f0995c3f73b5cf1, built from the same files before they were committed
-Kernel      UniXNU-orangepi5 6b56eac (board.toml and the DTS memory node) on top of b1d3c18; kernel.macho unchanged, 51154944 bytes, sha256
-            178d2e1fd5415e47679e8ae6b48d12691d2dc31324572458acfc5ac92769b617; kernel.macho.adt of the committed board.toml 14112 bytes sha256
-            94780c8a15b09d6dbde662fa298925bafde75bdab36ce8810bacd932be70f7cf
+            92e64d5a16ff935fc81053132fc1c4083d430573fb536c088f0995c3f73b5cf1; dc08d7c (ACPI link order) for memK: sha256
+            40a12be5f6325666b07c7bbe71ea1d57af6a2b7d92a4c1a0441f9c997bb85597; e1ac136 (PcdImageLargeAddressLoad off) for memL, memM and memN: sha256
+            2f03c49f65e34bf48163ac93b0cd3238be8b53df2f5f6be538f4f6127b3fe6ca. Each image was built from the same files before they were committed.
+Kernel      UniXNU-orangepi5 on top of b1d3c18; kernel.macho unchanged in all runs, 51154944 bytes, sha256
+            178d2e1fd5415e47679e8ae6b48d12691d2dc31324572458acfc5ac92769b617. kernel.macho.adt (14112 bytes): of 6b56eac (2.5 GiB window, memI) sha256
+            94780c8a15b09d6dbde662fa298925bafde75bdab36ce8810bacd932be70f7cf; of the committed board.toml (3.875 GiB window, memN) sha256
+            e7da4287fd4b5f7759ebc9df9a118ecf315db19387d9d0985fb57608d20f70d4. memI and memN carry the ADT of the committed board.toml of their day; the other runs carry an ADT of their day with the
+            window size patched in place where it differs from the committed one (section 8).
 
 1. The map the firmware hands DarwinBoot (memF, first MEMMAP dump; area memory)
 -------------------------------------------------------------------------------
@@ -64,7 +73,7 @@ memC, window 0xA0000000 (2.5 GiB) started the kernel, with 626173 free pages aga
 3. The map when the kernel takes over (memH, MEMMAP at ExitBootServices; window 2.5 GiB)
 ----------------------------------------------------------------------------------------
 (117 runs of 0 MiB left out.) The window is the 2560 MiB "loader code" run; 100 MiB of free memory stay behind it in the lower bank, and
-the 4 GiB bank above 0x100000000 (4095 MiB in two runs) is not used by the kernel.
+the 4 GiB bank above 0x100000000 (4095 MiB in two runs, split at 0x180000000 by RtkUndiDxe) is not used by the kernel in this run.
 [  14.466] MEMMAP: at ExitBootServices, 132 descriptors, 5170 MiB conventional, largest run 2048 MiB at 0x100000000
 [  14.466] MEMMAP:   0x200000-0x700000  5 MiB  reserved
 [  14.466] MEMMAP:   0x7F0000-0x8400000  124 MiB  free
@@ -87,11 +96,10 @@ Hand-off and the first kernel lines of the same run:
 [  14.143] 000
 [  14.704] vm_page_bootstrap: 626169 free pages, 29191 wired pages, (up to 0 of which are delayed free)
 
-4. The committed configuration, entry xnu to the watchdog reset (memI)
-----------------------------------------------------------------------
+4. The first committed configuration (2.5 GiB), entry xnu to the watchdog reset (memI)
+--------------------------------------------------------------------------------------
 The unixnu.toml of this run is the committed one with wdt-kick=400 instead of 1800; the board.toml, ADT and kernel are the committed ones.
 The run ends at the U-Boot prompt: the watchdog reset the board after the feeding stopped (400 s from the hand-off plus about 89 s, as the times say).
-The committed ESP files were written back afterwards (default entry xnu-probe, wdt-kick=1800) and verified in U-Boot by crc32, but not booted again.
 [  14.160] DARWINBOOT: ARM64 va=0xFFFFFFF00427C000 pa=0x4007C000 args=0x440C4000 entry=0x4321E5B8 owned=0xA0000
 [  14.160] 000
 [  14.483] MEMMAP: at ExitBootServices, 132 descriptors, 5170 MiB conventional, largest run 2048 MiB at 0x100000000
@@ -107,11 +115,15 @@ The boot reaches the point the 2 GiB runs of device-first-boot-20261103.txt reac
 SpringBoard and backboardd do not appear in the logs of memH (150 s of feeding) or memI (400 s); at 123 s memI is still applying text fixups to the dyld
 shared cache. Whether the extra 512 MiB changes anything later in the boot was not measured.
 
-5. Two firmware builds that did not get to the menu (memG, memJ; area firmware)
--------------------------------------------------------------------------------
-The good firmware (memF) after the sixth ACPI table, the ordinary case: the sixth table read from the volume has a garbage signature and its install fails
-(719611 pages is 0xAFAFAFAF bytes rounded up; 0xAF is the byte the debug pool writes over freed memory), then AcpiPlatform reports that it found no DSDT.
-The same lines are in every run, working or not:
+5. Why two firmware builds did not get to the menu: the PPTT table (memF, memG, memJ, memK; area firmware)
+----------------------------------------------------------------------------------------------------------
+The first firmware (memF), after the fifth ACPI table. The sixth table read from the volume has a garbage signature and no length, its install fails and the loop
+stops (719611 pages is 0xAFAFAFAF bytes rounded up, 0xAF is the byte the debug pool writes over freed memory); SPCR and DSDT are never installed and AcpiPlatform
+reports that it found no DSDT. These lines are in every run of that firmware, working or not:
+[   7.321] - Found 'DBG2' ACPI Table
+[   7.321] - Found 'FACP' ACPI Table
+[   7.326] - Found 'GTDT' ACPI Table
+[   7.326] - Found 'APIC' ACPI Table
 [   7.326] - Found 'MCFG' ACPI Table
 [   7.326] - Found '@?  ' ACPI Table
 [   7.326] AllocatePoolPages: failed to allocate 719611 pages
@@ -127,8 +139,8 @@ memG: build.sh -L with -D NETWORK_ENABLE=FALSE (no RtkUndiDxe, no network stack)
 [  97.337] U-Boot v5-gc507c92ef837-261013-dirty #<builder> (Nov 03 2026 - 09:13:13 +0800)
 # [  97.337] matched 'U-Boot v', typing ctrl-c,ctrl-c,ctrl-c,ctrl-c,ctrl-c,ctrl-c,ctrl-c,ctrl-c,ctrl-c,ctrl-c,ctrl-c,ctrl-c,ctrl-c,ctrl-c
 
-memJ: the default build with gEfiMdeModulePkgTokenSpaceGuid.PcdImageLargeAddressLoad|FALSE (a line added to UniXNUOrangePi5.dsc for this run only, not committed): RtkUndiDxe loads at
-0xE7CFB000 like any other driver, and the same data abort follows (FAR 0xFFFFFFF0 in both):
+memJ: the default build with gEfiMdeModulePkgTokenSpaceGuid.PcdImageLargeAddressLoad|FALSE (a line added to UniXNUOrangePi5.dsc for this run, committed later as e1ac136):
+RtkUndiDxe loads at 0xE7CFB000 like any other driver, and the same data abort follows (FAR 0xFFFFFFF0 in both):
 [   7.307] Loading driver at 0x000E7CFB000 EntryPoint=0x000E7CFC200
 [   7.316] Loading driver at 0x000E7CFB000 EntryPoint=0x000E7CFC200 
 [   7.356] - Found '@?  ' ACPI Table
@@ -138,20 +150,108 @@ memJ: the default build with gEfiMdeModulePkgTokenSpaceGuid.PcdImageLargeAddress
 [   8.430] ASSERT [EmulatorDxe] /tiano/edk2/ArmPkg/Library/DefaultExceptionHandlerLib/AArch64/DefaultExceptionHandler.c(343): ((BOOLEAN)(0==1))
 [  97.510] U-Boot v5-gc507c92ef837-261013-dirty #<builder> (Nov 03 2026 - 09:13:13 +0800)
 Both aborts are in AcpiTableDxe (ELR at offset 0x11D0 of its image, loaded at 0xEF457000 in memG and 0xEF07E000 in memJ) and the registers hold 0xAFAFAFAF
-(X25, V0). That points to freed memory being read in the ACPI table path, which only turns into a crash for some memory layouts; it was not traced to a
-line. So removing RtkUndiDxe from the middle of the upper bank (either way) exposes it, and the working firmware keeps RtkUndiDxe at 0x180000000.
+(X25, V0). Which line of AcpiTableDxe reads the freed memory was not traced. What was found, on the host, is why the sixth table is garbage:
 
-6. What the ADT can carry (host reading, not a hardware observation)
+Pptt.aslc (edk2-rockchip, Silicon/Rockchip/RK3588/AcpiTables) compiled with clang puts an 8-byte pointer (ReferenceAcpiTable, .data.rel.ro) in front of the table (.data).
+llvm-objdump -h of the build tree object (the order is the compiler's, the same with and without the fix):
+  Idx Name              Size     VMA              Type
+    2 .text             00000000 0000000000000000 TEXT
+    3 .data.rel.ro      00000008 0000000000000000 DATA
+    4 .rela.data.rel.ro 00000018 0000000000000000
+    5 .data             00000220 0000000000000000 DATA
+GenFw -c (the ACPI conversion) copies the data sections as the linker ordered them and only checks the length; so Pptt.acpi starts with the pointer. The same link
+command as the build's (clang -target aarch64-linux-gnu -fuse-ld=lld ... -Wl,--entry,ReferenceAcpiTable ... Pptt.obj, GccBase.lds) run by hand, then GenFw -c,
+without and with -Wl,--sort-section=name (the first 16 bytes of Pptt.acpi; the table is 0x220 = 544 bytes long):
+  before: 00000000: 4002 0000 0000 0000 5050 5454 2002 0000   @.......PPTT ...
+  after:  00000000: 5050 5454 2002 0000 0100 524b 4350 2020   PPTT ....RKCP
+The "signature" the firmware read is the first four bytes 40 02 00 00 ("@" 02 00 00, printed "@?"), its length the next four, 0. With --sort-section=name (.data before
+.data.rel.ro) the table comes first. The fix is that flag for the AcpiTables module in UniXNUOrangePi5.dsc (uefi-orangepi5 dc08d7c). On the board, memK (the fix
+only, window 0xA0000000) installs all eight tables, and the line about the DSDT is gone:
+[   7.331] - Found 'DBG2' ACPI Table
+[   7.331] - Found 'FACP' ACPI Table
+[   7.349] - Found 'GTDT' ACPI Table
+[   7.349] - Found 'APIC' ACPI Table
+[   7.349] - Found 'MCFG' ACPI Table
+[   7.349] - Found 'PPTT' ACPI Table
+[   7.349] - Found 'SPCR' ACPI Table
+[   7.349] - Found 'DSDT' ACPI Table
+memL is memJ plus the fix, same window 0xE0000000, RtkUndiDxe again at 0xE7CFB000: no abort, the boot goes on (section 6). The memG build (no network stack) was not
+repeated with the fix. Host reading: the broken PPTT install is what leaves the ACPI protocol in a state that some memory layouts turn into an abort; the layouts of memG
+and memJ were not the cause of it.
+
+6. The 4 GiB bank as the kernel's window (memK to memN; area memory)
+--------------------------------------------------------------------
+With PcdImageLargeAddressLoad off (uefi-orangepi5 e1ac136) RtkUndiDxe loads at 0xE7CFB000 (memL; memK, without that change, still at 0x180000000), and the upper bank is one run.
+First MEMMAP dump of memL (runs of the same kind merged, 0 MiB runs left out):
+[   8.097] MEMMAP: changed, 124 descriptors, 7745 MiB conventional, largest run 4096 MiB at 0x100000000
+[   8.097] MEMMAP:   0x200000-0x700000  5 MiB  reserved
+[   8.101] MEMMAP:   0x7F0000-0x8400000  124 MiB  free
+[   8.101] MEMMAP:   0x8400000-0x9400000  16 MiB  reserved
+[   8.101] MEMMAP:   0x9400000-0x3E588000  849 MiB  free
+[   8.101] MEMMAP:   0x3E5DE000-0x40000000  26 MiB  boot services data
+[   8.101] MEMMAP:   0x40000000-0xE7381000  2675 MiB  free
+[   8.105] MEMMAP:   0xE73D0000-0xE7BC0000  7 MiB  runtime data
+[   8.131] MEMMAP:   0xE8577000-0xEE977000  100 MiB  boot services code
+[   8.131] MEMMAP:   0xEE977000-0xEEA77000  1 MiB  boot services data
+[   8.149] MEMMAP:   0xEF0F9000-0xEFF90000  14 MiB  boot services data
+[   8.149] MEMMAP:   0x100000000-0x200000000  4096 MiB  free
+
+The map when the kernel takes over in memL (window 0xE0000000, 3.5 GiB; the lower bank is left alone, the free run at 0x40000000 is 2660 MiB
+at that point):
+[  14.513] MEMMAP: at ExitBootServices, 132 descriptors, 4146 MiB conventional, largest run 2660 MiB at 0x40000000
+[  14.584] MEMMAP:   0x100000000-0x10007C000  0 MiB  free
+[  14.584] MEMMAP:   0x10007C000-0x1E007C000  3584 MiB  loader code
+[  14.584] MEMMAP:   0x1E007C000-0x200000000  511 MiB  free
+
+Hand-off lines of the runs (window, physical start, free pages of vm_page_bootstrap, launchd's "Early boot complete"), the first column is the capture time in seconds:
+[memK] window 0xA0000000 (2.5 GiB, lower bank: pa 0x4007C000)
+[  14.191] DARWINBOOT: ARM64 va=0xFFFFFFF00427C000 pa=0x4007C000 args=0x440C4000 entry=0x4321E5B8 owned=0xA0000
+[  14.747] vm_page_bootstrap: 626170 free pages, 29190 wired pages, (up to 0 of which are delayed free)
+[  44.026] [System Event] [114529826850] [INFO] [Subsystem: launchd] [Event: boot] Early boot complete. Continuing system boot.
+  "panic(" lines: 0; the capture ends: # capture end 252.869 s, 156325 raw bytes
+[memL] window 0xE0000000 (3.5 GiB, upper bank)
+[  14.194] DARWINBOOT: ARM64 va=0xFFFFFFF00427C000 pa=0x10007C000 args=0x1040C4000 entry=0x10321E5B8 owned=0xE0
+[  14.812] vm_page_bootstrap: 884604 free pages, 32900 wired pages, (up to 0 of which are delayed free)
+[  44.280] [System Event] [4815692984] [INFO] [Subsystem: launchd] [Event: boot] Early boot complete. Continuing system boot.
+  "panic(" lines: 0; the capture ends: # capture end 252.932 s, 156000 raw bytes
+[memM] window 0xFFE00000 (4094 MiB, upper bank)
+[  14.194] DARWINBOOT: ARM64 va=0xFFFFFFF00427C000 pa=0x10007C000 args=0x1040C4000 entry=0x10321E5B8 owned=0xFF
+[  14.843] vm_page_bootstrap: 1013320 free pages, 34744 wired pages, (up to 0 of which are delayed free)
+[  44.444] [System Event] [5384149278] [INFO] [Subsystem: launchd] [Event: boot] Early boot complete. Continuing system boot.
+  "panic(" lines: 0; the capture ends: # capture end 252.960 s, 155765 raw bytes
+memK, memL and memM ran with wdt-kick=150: the feeding stopped 150 s after the hand-off and the board was reset about 89 s later, so each capture ends at the U-Boot banner (250 s).
+
+memN, the committed configuration (window 0xF8000000 = 3.875 GiB, 128 MiB below the end of the run; entry xnu; unixnu.toml of the commit with wdt-kick=400 instead of 1800;
+launcher e1ac136, the ADT of the committed board.toml, crc32 1b5749ed). The window is never lower than 0x10007C000 + 0xF8000000 = 0x1F807C000 < 0x200000000:
+[   7.359] - Found 'PPTT' ACPI Table
+[   7.359] - Found 'SPCR' ACPI Table
+[   7.359] - Found 'DSDT' ACPI Table
+[  14.200] DARWINBOOT: ARM64 va=0xFFFFFFF00427C000 pa=0x10007C000 args=0x1040C4000 entry=0x10321E5B8 owned=0xF8
+[  14.840] vm_page_bootstrap: 981518 free pages, 34290 wired pages, (up to 0 of which are delayed free)
+[  43.194] com.apple.xpc.launchd|1969-12-31 16:04:35.044585 <Notice>: hello, launchd UUID: 4B525992-8C69-315E-A51A-CC9433E45B51
+[  44.341] AMFI: Launch Constraint Violation (not enforcing), error info: c[6]p[2]m[3]e[255], (Process was launched as a system service unexpectedly but met System Service constraints) launching proc[
+[  44.431] [System Event] [6630464399] [INFO] [Subsystem: launchd] [Event: boot] Early boot complete. Continuing system boot.
+[ 415.214] NativeNvme: wdt-kick: 400 s are over, not feeding the watchdog any more
+[  14.518] MEMMAP: at ExitBootServices, 132 descriptors, 3762 MiB conventional, largest run 2660 MiB at 0x40000000
+[  14.589] MEMMAP:   0x100000000-0x10007C000  0 MiB  free
+[  14.589] MEMMAP:   0x10007C000-0x1F807C000  3968 MiB  loader code
+[  14.589] MEMMAP:   0x1F807C000-0x200000000  127 MiB  free
+"Subsystem: launchd" lines: 31, "panic(" lines: 0, # capture end 503.009 s, 156167 raw bytes
+SpringBoard and backboardd do not appear in the logs of any of the runs (no display, GPU or input driver yet); whether the larger window changes anything later in the
+boot was not measured beyond the feeding time of each run.
+
+7. What the ADT can carry (host reading, not a hardware observation)
 --------------------------------------------------------------------
 The ADT generator of UniXNU takes one memory range (payload.dram_size, the DTS memory node) and DarwinBoot one window (darwinboot-memory-size in /chosen,
 256 MiB to 8 GiB in 2 MiB steps). The kernel gets its memory from the window and the boot arguments, not from the DTS node; nothing that reads dram-base or
 dram-size in /chosen was found in the kernel sources of this tree. So the 3.75 GiB bank below 0xf0000000 and the 4 GiB above 0x100000000 cannot both
-be given to the kernel, and the 256 MiB at 0x2f0000000 that U-Boot reports are mapped by edk2 nowhere.
+be given to the kernel, and the 256 MiB at 0x2f0000000 that U-Boot reports are mapped by edk2 nowhere. The ADT of the committed board.toml (14112 bytes, read back
+from the file): darwinboot-memory-size 0xF8000000, dram-base 4294967296 (0x100000000), dram-size 4160749568 (0xF8000000).
 
-7. How the runs were made (no hands at the board)
+8. How the runs were made (no hands at the board)
 -------------------------------------------------
 Files on the ESP were replaced from the build host through the U-Boot prompt (uboot-put.py of the SoC repository sends the file with YMODEM over the console,
-fatwrite writes it, fatload and crc32 verify it). Output for the committed unixnu.toml (all numbers hex, as U-Boot reads them):
+fatwrite writes it, fatload and crc32 verify it). Output for the committed unixnu.toml of that day (all numbers hex, as U-Boot reads them):
 uboot-put: put.bin, 1886 bytes sent; U-Boot after the transfer: Timed out | ## Binary (ymodem) download aborted
 uboot-put: crc32 of the first 1886 bytes at 0x1000000: U-Boot 561e27eb, here 561e27eb
 => fatwrite nvme 0:1 0x1000000 EFI/UniXNU/unixnu.toml 0x75e
@@ -160,13 +260,15 @@ uboot-put: crc32 of the first 1886 bytes at 0x1000000: U-Boot 561e27eb, here 561
 1886 bytes read in 1 ms (1.8 MiB/s)
 => crc32 0x3000000 0x75e
 crc32 for 03000000 ... 0300075d ==> 561e27eb
-The same for uefi-launcher.img (5251560 bytes, crc32 51ebc4c4) and kernel.macho.adt (14112 bytes, crc32 6f7e713f); the transfer of the launcher takes about 40 s at 1.5 Mbaud.
-Then "run bootcmd" at the prompt; CAPTURE_ARGS="--send 'menu: shown' text:1 --send 'U-Boot v' ctrl-c,ctrl-c,... --stop '<INTERRUPT>' 1 'at the U-Boot prompt'"
-typed the menu key, and stopped the capture with Ctrl-C at the next U-Boot banner (the watchdog or a panic resets the board).
+The same for uefi-launcher.img (5251560 bytes; crc32 51ebc4c4 for e35d303, aac42459 for dc08d7c, 4509baf4 for e1ac136) and kernel.macho.adt (14112 bytes; crc32 6f7e713f
+for the 2.5 GiB ADT, 1b5749ed for the committed 3.875 GiB one); the transfer of the launcher takes about 40 s at 1.5 Mbaud. The window size of the trial runs was patched
+in the ADT by a script before it was sent (the file is the committed one otherwise). Then "run bootcmd" at the prompt;
+CAPTURE_ARGS="--send 'menu: shown' text:1 --send 'U-Boot v' ctrl-c,ctrl-c,... --stop '<INTERRUPT>' 1 'at the U-Boot prompt'" typed the menu key, and stopped the
+capture with Ctrl-C at the next U-Boot banner (the watchdog or a panic resets the board).
 
-8. The Data window on later boots (storage; memH and memI, hdmi3 of device-hdmi-watchdog-20261103.txt, xnu1 of device-first-boot-20261103.txt)
-----------------------------------------------------------------------------------------------------------------------------------------------
-The first boot (xnu1, 11:16) found no header in the Data window and formatted it; the later boots that mount Data (hdmi3, memH, memI) found the header and did not
+9. The Data window on later boots (storage; memH, memI and memN, hdmi3 of device-hdmi-watchdog-20261103.txt, xnu1 of device-first-boot-20261103.txt)
+----------------------------------------------------------------------------------------------------------------------------------------------------
+The first boot (xnu1, 11:16) found no header in the Data window and formatted it; the later boots that mount Data (hdmi3, memH, memI, memN) found the header and did not
 format again ("formatted 1 times" is the count the first boot wrote). Lines of the first boot, of memH, and what the memI run (2.5 GiB window) published and mounted:
 [xnu1] [  80.117] NativeNvme: data: no header in the window: formatting
 [xnu1] [  80.642] NativeNvme: data: formatted the Data window at lba 130547712 (64 MiB zeroed in 357 ms, seed of 9216 KiB, all in 534 ms): ready
@@ -179,5 +281,7 @@ format again ("formatted 1 times" is the count the first boot wrote). Lines of t
 [memI] [  16.730] NativeNvme: published OS: lba 528384 + 11870275 blocks (5796 MiB), read-only
 [memI] [  16.766] NativeNvme: root device 1,9 (disk5s1) is a read-only volume of the "OS" window: accepted without Apple's root authentication (boot-arg nvme-root-trust=1)
 [memI] [  16.783] NativeNvme: Data volume 3E8C2B1A-5D47-4F90-A6C3-9B1D7E0F2A48 is /dev/disk3s1 (device 1,5), writable
+The same header line in memN (3.875 GiB window):
+[memN] [  15.249] NativeNvme: data: header: version 1 state 2, 4194304 blocks, seed crc 0x88630d68, formatted 1 times
 The line of hdmi3 (11:55, xnu-hdmi entry, 1800 s of feeding) is the same: "NativeNvme: data: header: version 1 state 2, 4194304 blocks, seed crc 0x88630d68, formatted 1 times".
 That the contents of Data survive a reboot (a file written in one boot and read in the next) was not checked; only the window header was.
