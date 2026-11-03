@@ -2,9 +2,9 @@
 // Bounded offline original lifecycle instrument; no desktop claim.
 // LegacyDisplayProbe.cpp of UniXNU-sheng, as the community UniXNU-qemu repository cut it and as UniXNU-evb10 cut it for the RK3588 EVB10
 // (BSD-2-Clause-Patent, Copyright (c) 2026, UniXNU contributors), cut once more for the Orange Pi 5: the late probe starts the key store
-// stand-in and then publishes the UEFI frame buffer (the HDMI0 scanout the firmware set up) as the system display. What belongs to the
-// EVB10 is gone: its own frame buffer and the VOP2 direct scanout through the VOP IOMMU, and the starts of its touch, Wi-Fi, audio, DVFS
-// and Mali drivers (this board has none of them yet).
+// stand-in, the HID services (opi5-hid=1) and the Mali-G610 (mali=N, off without it) and then publishes the UEFI frame buffer (the HDMI0
+// scanout the firmware set up) as the system display. What belongs to the EVB10 is gone: its own frame buffer and the VOP2 direct scanout
+// through the VOP IOMMU, and the starts of its touch, Wi-Fi, audio and DVFS drivers (this board has none of them yet).
 #include <IOKit/IOPlatformExpert.h>
 #include <IOKit/IODeviceMemory.h>
 #include <IOKit/IOBufferMemoryDescriptor.h>
@@ -651,6 +651,8 @@ static void opi5_hid_load(void) {
     }
     printf("opi5: hid: IOHIDFamily %d IOHIDEventDriver %d IOHIDResource %s\n",family,driver,resource?"found":"missing");
 }
+// package/Mali: the Mali-G610 bring-up (mali=<milestone>); returns at once without that argument.
+extern "C" void mali_start(void);
 void native_legacy_display_late_probe(void);
 extern void native_keystore_probe(void);
 static void legacy_late_probe_body(void);
@@ -661,6 +663,7 @@ void native_legacy_display_late_probe(void) {
 static void legacy_late_probe_body(void) {
     native_keystore_probe();
     opi5_hid_load();
+    mali_start();
     IOService *display=pendingLegacyDisplay;if(!display)return;pendingLegacyDisplay=nullptr;
     native_legacy_surface_status=OSKextLoadKextWithIdentifier("com.apple.iokit.IOSurface");
     OSDictionary *matching=IOService::nameMatching("IOCoreSurfaceRoot");

@@ -6,6 +6,7 @@ catalog does not carry:
 
     build/rk3588-nvme/libRk3588Nvme.a      package/Rk3588Nvme  (bind-nvme-storage.py makes the archive)
     build/native-legacy-display/, native-gop-presenter/, apple-key-store-state/   objects of the display archive (build-native-legacy-display.py)
+    build/mali/libMali.a                   package/Mali  (submodule)
 
 An XNU driver has to be compiled with the same flags, the same SDK and the same deployment target as the kernel object it lives next to, or
 the Mach-O it produces will not link or will not run. The kernel build records the exact command for every object it compiles in a
@@ -14,7 +15,7 @@ kits/orangepi5 in the build tree; catalog drivers are under drivers/.
 
   python3 scripts/build-orangepi5-drivers.py Rk3588Nvme
 
-Derived from build-evb10-drivers.py of UniXNU-evb10 (the Wi-Fi, audio, touch, HID and Mali entries are left out until this board has those
+Derived from build-evb10-drivers.py of UniXNU-evb10 (the Wi-Fi, audio, touch and HID entries are left out until this board has those
 drivers; the display entries are the EVB10's without its fork), which is derived from UniXNU-sheng's scripts/build-arm-driver.py, BSD-2-Clause-Patent, Copyright (c) 2026, UniXNU contributors.
 """
 import argparse
@@ -36,6 +37,10 @@ COMPONENTS = {
     # the absolute symbols for the original code. This script only leaves the object (and removes a stale archive), so the kernel link
     # cannot pick up a driver that was never bound.
     'Rk3588Nvme': (('kits/orangepi5/Rk3588Nvme/NativeNvme.cpp',), 'rk3588-nvme', ('build/storage-abi/include',), True),
+    # The Mali-G610 (package/Mali, a submodule shared with the EVB10: power domain, clocks, firmware, MMU, command streams and the
+    # Metal-facing service). The display probe starts it with mali=<milestone>; without that argument mali_start() returns at once.
+    # scripts/build-mali-firmware.py makes its mali_csffw.inc from .cache/firmware/mali_csffw.bin first.
+    'Mali': (('kits/orangepi5/Mali/Mali.cpp',), 'mali', (), False),
     # The display archive (scripts/build-native-legacy-display.py, run through scripts/build-orangepi5-display.py). These leave an object only
     # ('object'): that script generates the original-class header NativeLegacyDisplay includes (hence the include of its own output
     # directory), binds the objects to the original IOMobileFramebufferLegacy and makes the archive. drivers/GopFramebuffer and

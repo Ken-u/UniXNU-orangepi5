@@ -43,6 +43,9 @@ archives = [
   # The NVMe driver subclasses the original IOBlockStorageDevice: compile leaves an object, binding makes the archive.
   "build-orangepi5-drivers.py Rk3588Nvme",
   "bind-nvme-storage.py",
+  # The Mali-G610 driver (package/Mali) and its firmware include; it runs only with the boot argument mali=N.
+  "build-mali-firmware.py",
+  "build-orangepi5-drivers.py Mali",
   # Only configs/orangepi5_display_defconfig links this archive; under orangepi5_defconfig the step does nothing.
   "build-orangepi5-display.py",
 ]
