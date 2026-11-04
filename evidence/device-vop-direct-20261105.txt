@@ -1,0 +1,26 @@
+Orange Pi 5: RK3588-common VOP2 direct scanout (no CPU GOP copy)
+Date: 2026-11-05
+Kernel: EFI/UniXNU/Payloads/kernel.macho crc32 6612adcc (esp-put VERIFIED)
+Tag: uefi-orangepi5/runs/vop2b (capture started mid-boot at kernel t+65s)
+Result: iommu=1, flips>0, copy fallbacks=0, CPU copies=0 (was ~53 ms/frame with GOP blit)
+
+[   0.821] opi5: display t+65s: swap ok 26 rej 0 (reason 0) copy 26 (status 0, 8294400 B, 0 copies) retired 26 gen 26/26 frames 2 gop 0/26
+[   0.821] opi5: display t+65s: vop direct (iommu 1, status 00000019 00000019): flips 24, surfaces mapped 3 (map failures 0, let go 0, remaps 3, zap timeouts 0), latch mean 6455 us longest 15967 us (0 over 50 ms), copy fallbacks 0, back to boot 1
+[  25.837] opi5: display t+90s: swap ok 26 rej 0 (reason 0) copy 26 (status 0, 8294400 B, 0 copies) retired 26 gen 26/26 frames 2 gop 0/26
+[  25.837] opi5: display t+90s: vop direct (iommu 1, status 00000019 00000019): flips 24, surfaces mapped 3 (map failures 0, let go 0, remaps 3, zap timeouts 0), latch mean 6455 us longest 15967 us (0 over 50 ms), copy fallbacks 0, back to boot 1
+[  55.844] opi5: display t+120s: swap ok 26 rej 0 (reason 0) copy 26 (status 0, 8294400 B, 0 copies) retired 26 gen 26/26 frames 2 gop 0/26
+[  55.844] opi5: display t+120s: vop direct (iommu 1, status 00000019 00000019): flips 24, surfaces mapped 3 (map failures 0, let go 0, remaps 3, zap timeouts 0), latch mean 6455 us longest 15967 us (0 over 50 ms), copy fallbacks 0, back to boot 1
+[  85.850] opi5: display t+150s: swap ok 26 rej 0 (reason 0) copy 26 (status 0, 8294400 B, 0 copies) retired 26 gen 26/26 frames 2 gop 0/26
+[  85.850] opi5: display t+150s: vop direct (iommu 1, status 00000019 00000019): flips 24, surfaces mapped 3 (map failures 0, let go 0, remaps 3, zap timeouts 0), latch mean 6455 us longest 15967 us (0 over 50 ms), copy fallbacks 0, back to boot 1
+[ 115.858] opi5: display t+180s: swap ok 26 rej 0 (reason 0) copy 26 (status 0, 8294400 B, 0 copies) retired 26 gen 26/26 frames 2 gop 0/26
+[ 115.858] opi5: display t+180s: vop direct (iommu 1, status 00000019 00000019): flips 24, surfaces mapped 3 (map failures 0, let go 0, remaps 3, zap timeouts 0), latch mean 6455 us longest 15967 us (0 over 50 ms), copy fallbacks 0, back to boot 1
+[ 145.864] opi5: display t+210s: swap ok 26 rej 0 (reason 0) copy 26 (status 0, 8294400 B, 0 copies) retired 26 gen 26/26 frames 2 gop 0/26
+[ 145.864] opi5: display t+210s: vop direct (iommu 1, status 00000019 00000019): flips 24, surfaces mapped 3 (map failures 0, let go 0, remaps 3, zap timeouts 0), latch mean 6455 us longest 15967 us (0 over 50 ms), copy fallbacks 0, back to boot 1
+[ 175.873] opi5: display t+240s: swap ok 26 rej 0 (reason 0) copy 26 (status 0, 8294400 B, 0 copies) retired 26 gen 26/26 frames 2 gop 0/26
+[ 175.873] opi5: display t+240s: vop direct (iommu 1, status 00000019 00000019): flips 24, surfaces mapped 3 (map failures 0, let go 0, remaps 3, zap timeouts 0), latch mean 6455 us longest 15967 us (0 over 50 ms), copy fallbacks 0, back to boot 1
+[ 205.878] opi5: display t+270s: swap ok 26 rej 0 (reason 0) copy 26 (status 0, 8294400 B, 0 copies) retired 26 gen 26/26 frames 2 gop 0/26
+[ 205.878] opi5: display t+270s: vop direct (iommu 1, status 00000019 00000019): flips 24, surfaces mapped 3 (map failures 0, let go 0, remaps 3, zap timeouts 0), latch mean 6455 us longest 15967 us (0 over 50 ms), copy fallbacks 0, back to boot 1
+[ 235.886] opi5: display t+300s: swap ok 26 rej 0 (reason 0) copy 26 (status 0, 8294400 B, 0 copies) retired 26 gen 26/26 frames 2 gop 0/26
+[ 235.886] opi5: display t+300s: vop direct (iommu 1, status 00000019 00000019): flips 24, surfaces mapped 3 (map failures 0, let go 0, remaps 3, zap timeouts 0), latch mean 6455 us longest 15967 us (0 over 50 ms), copy fallbacks 0, back to boot 1
+... later ...
+[ 235.886] opi5: display t+300s: vop direct (iommu 1, status 00000019 00000019): flips 24, surfaces mapped 3 (map failures 0, let go 0, remaps 3, zap timeouts 0), latch mean 6455 us longest 15967 us (0 over 50 ms), copy fallbacks 0, back to boot 1
