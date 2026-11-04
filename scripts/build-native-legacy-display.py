@@ -291,7 +291,7 @@ require(code((keyevents/'NativeKeyStoreEvents.o').read_bytes(),macho((keyevents/
 archive=OUT/'libNativeLegacyDisplay.late.a';archive.unlink(missing_ok=True)
 ar=str(tool('llvm-ar'))
 run([ar,'rcs',archive,late,OUT/'original-bindings.o',OUT/'LegacyDisplayProbe.o',keystore_obj,keyevents_late])
-sources=[ROOT/'drivers/GopFramebuffer/NativeLegacyDisplay.cpp',ROOT/'drivers/GopFramebuffer/NativeLegacyRequest.h',source,keystore_source,
+sources=[ROOT/'kits/orangepi5/Opi5Display/NativeLegacyDisplay.cpp',ROOT/'drivers/GopFramebuffer/NativeLegacyRequest.h',source,keystore_source,
          ROOT/'drivers/AppleKeyStoreState/NativeKeyStoreEvents.cpp']
 print(run(['python3',ROOT/'scripts/build-orangepi5-drivers.py','NativeGOPPresenter'],text=True),end='')
 gop=ROOT/'build/native-gop-presenter';gop_late=gop/'NativeGOPPresenter.late.o'

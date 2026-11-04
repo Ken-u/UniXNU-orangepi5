@@ -37,6 +37,6 @@ if FAMILY not in json.loads(plan_path.read_text())['original_executable_sha256']
     raise SystemExit('the previous kernel carries no original %s: build the display-less kernel first '
                      '(scripts/build-orangepi5-kernel.sh does)' % FAMILY)
 
-for script in ('build-link-stubs.py', 'build-display-abi.py', 'build-native-legacy-display.py'):
+for script in ('build-link-stubs.py', 'build-display-abi.py', 'build-native-legacy-display.py', 'build-orangepi5-hid.py'):
     print('display archive: %s' % script)
     subprocess.run([sys.executable, str(ROOT / 'scripts' / script)], check=True, cwd=ROOT)

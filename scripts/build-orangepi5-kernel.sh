@@ -35,6 +35,22 @@ if [ -n "$bad" ]; then echo "$bad" >&2; echo "error: ';' inside inline assembly"
 build_pass() { # defconfig outdir
 	echo "== configure $1"
 	unixnu defconfig "$1"
+	# GitHub DriverKit fetch often times out; reuse headers already fetched for another board tree
+	# (set UNIXNU_LOCAL_DRIVERKIT / UNIXNU_LOCAL_TRUSTCACHE yourself to override).
+	if [ -z "${UNIXNU_LOCAL_DRIVERKIT:-}" ]; then
+		for cand in \
+			"$UNIXNU/out/evb10/ipados-17.7.11-21H461/evb10/tree" \
+			"$UNIXNU/out/orangepi5/ipados-17.7.11-21H461/orangepi5/tree" \
+			"$UNIXNU/out/orangepi5/ipados-17.7.11-21H461/orangepi5_display/tree"; do
+			if [ -d "$cand/.cache/xnu-work/iokit/DriverKit" ]; then
+				export UNIXNU_LOCAL_DRIVERKIT="$cand/.cache/xnu-work/iokit/DriverKit"
+				export UNIXNU_LOCAL_TRUSTCACHE="$cand/.cache/xnu-work/EXTERNAL_HEADERS/TrustCache"
+				mkdir -p "$2/tree/.cache/sources"
+				cp -n "$cand"/.cache/sources/xnu-*.json "$2/tree/.cache/sources/" 2>/dev/null || true
+				break
+			fi
+		done
+	fi
 	# make does not track the force-loaded archives: remove the linked kernel so the link always runs.
 	rm -f "$2"/tree/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped.noctf
 	echo "== build kernel ($1)"

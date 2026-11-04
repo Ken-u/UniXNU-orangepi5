@@ -17,7 +17,7 @@
  
  	/*
  	 * Copy out program name.
-@@ -8261,6 +8271,2294 @@
+@@ -8261,6 +8271,2338 @@
  
  	panic("Process 1 exec of %s failed, errno %d", ((i == 0) ? "<null>" : init_programs[i - 1]), error);
  }
@@ -776,6 +776,29 @@
 +		return EINVAL;
 +	}
 +	evb10_data_stage = 4;
++	/*
++	 * OPi5: a Data volume that first saw the display without unit-scale cached MainScreenScale=0 in
++	 * MobileGestalt. SpringBoard then builds FBSDisplayMode with preferredScale=0 and BRKs (sb14:
++	 * mode 1072x1904 scale 0) even though /chosen display-scale is 2. Drop the caches every boot so
++	 * MG re-reads chosen/ADT; the files are rewritten on the next query.
++	 */
++	{
++		static const char *const caches[] = {
++			"/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist",
++			"/private/var/mobile/Library/Preferences/com.apple.MobileGestalt.plist",
++			"/private/var/mobile/Library/Preferences/com.apple.mobilegestalt.plist",
++		};
++		unsigned i;
++		for (i = 0; i < sizeof(caches) / sizeof(caches[0]); i++) {
++			struct unlink_args request = {.path = scratch + 0xc00};
++			int32_t result = 0;
++			int drop = copyout(caches[i], request.path, strlen(caches[i]) + 1);
++			if (!drop) {
++				drop = unlink(p, &request, &result);
++			}
++			printf("evb10: Data: wipe MG cache %s -> %d\n", caches[i], drop);
++		}
++	}
 +	uint32_t copy_arg = 1;
 +	(void) PE_parse_boot_argn("emmc-data-copy", &copy_arg, sizeof(copy_arg));
 +	if (copy_arg) {
@@ -1123,17 +1146,18 @@
 + * means "its own fault", the registers of the trap and the frame-pointer chain of its user stack are printed:
 + * the PC and the return addresses are addresses of the dyld shared cache, which a host can say the names of.
 + */
-+extern int evb10_user_context(thread_t thread, uint64_t out[10]);
++extern int evb10_user_context(thread_t thread, uint64_t out[20]);
 +extern int evb10_shared_region(task_t task, uint64_t out[3]);
 +
 +static void
 +evb10_crash_site(proc_t p, int sig)
 +{
-+	uint64_t ctx[10], frame[2], chain[20], sr[3] = { 0, 0, 0 };
++	uint64_t ctx[20], frame[2], chain[20], sr[3] = { 0, 0, 0 };
 +	uint64_t fp;
 +	unsigned depth = 0, i;
 +	char line[1024];
 +	size_t n;
++	uint8_t mode[80];
 +
 +	if (p != current_proc() || evb10_user_context(current_thread(), ctx) != 0) {
 +		return;
@@ -1154,6 +1178,26 @@
 +	    (unsigned long long)ctx[3], (unsigned long long)ctx[4], (unsigned long long)ctx[5], (unsigned long long)ctx[7],
 +	    (unsigned long long)ctx[8], (unsigned long long)ctx[9], (unsigned long long)sr[2], (unsigned long long)sr[0]);
 +	printf("%s\n", line);
++	snprintf(line, sizeof(line),
++	    "evb10: crash pid %d x19-x28 %#llx %#llx %#llx %#llx %#llx %#llx %#llx %#llx %#llx %#llx",
++	    proc_getpid(p),
++	    (unsigned long long)ctx[10], (unsigned long long)ctx[11], (unsigned long long)ctx[12],
++	    (unsigned long long)ctx[13], (unsigned long long)ctx[14], (unsigned long long)ctx[15],
++	    (unsigned long long)ctx[16], (unsigned long long)ctx[17], (unsigned long long)ctx[18],
++	    (unsigned long long)ctx[19]);
++	printf("%s\n", line);
++	/* FBSDisplayMode object layout (historical HVF): isa,width,height,preferred,override,refresh,gamut,hdr,rotation,virtual. x19 holds it at the validity BRK. */
++	if ((ctx[10] & 0x7) == 0 && copyin((user_addr_t)ctx[10], mode, sizeof(mode)) == 0) {
++		uint64_t width, height, preferred, override_bits, refresh_bits;
++		memcpy(&width, mode + 8, 8);
++		memcpy(&height, mode + 16, 8);
++		memcpy(&preferred, mode + 24, 8);
++		memcpy(&override_bits, mode + 32, 8);
++		memcpy(&refresh_bits, mode + 40, 8);
++		printf("evb10: crash pid %d mode %ux%u scale %llu override_bits %#llx refresh_bits %#llx\n", proc_getpid(p),
++		    (unsigned)width, (unsigned)height, (unsigned long long)preferred,
++		    (unsigned long long)override_bits, (unsigned long long)refresh_bits);
++	}
 +	for (i = 0; i < depth; i += 8) {
 +		unsigned k;
 +		n = snprintf(line, sizeof(line), "evb10: crash pid %d up %u:", proc_getpid(p), i);

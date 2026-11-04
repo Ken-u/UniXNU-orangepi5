@@ -1,6 +1,6 @@
 --- a/osfmk/kern/bsd_kern.c
 +++ b/osfmk/kern/bsd_kern.c
-@@ -1526,3 +1526,796 @@
+@@ -1526,3 +1526,801 @@
  		return KERN_FAILURE;
  	}
  }
@@ -266,14 +266,16 @@
 +
 +/*
 + * The registers a thread had at its last trap from user mode, for the crash-site dump of bsd
-+ * (evb10_exit_trace): pc, lr, sp, fp, x0, x1, x2, x16, esr, far. 0 if the thread has user state.
++ * (evb10_exit_trace): pc, lr, sp, fp, x0, x1, x2, x16, esr, far, then x19..x28. 0 if the thread has user state.
 + */
-+int evb10_user_context(thread_t thread, uint64_t out[10]);
++/* out[0..9] = pc,lr,sp,fp,x0,x1,x2,x16,esr,far; out[10..19] = x19..x28 (FBSDisplayMode validity keeps width/height/scale in x24-x26). */
++int evb10_user_context(thread_t thread, uint64_t out[20]);
 +
 +int
-+evb10_user_context(thread_t thread, uint64_t out[10])
++evb10_user_context(thread_t thread, uint64_t out[20])
 +{
 +	struct arm_saved_state *user = get_user_regs(thread);
++	unsigned i;
 +
 +	if (user == NULL) {
 +		return -1;
@@ -288,6 +290,9 @@
 +	out[7] = get_saved_state_reg(user, 16);
 +	out[8] = get_saved_state_esr(user);
 +	out[9] = get_saved_state_far(user);
++	for (i = 0; i < 10; i++) {
++		out[10 + i] = get_saved_state_reg(user, 19 + i);
++	}
 +	return 0;
 +}
 +

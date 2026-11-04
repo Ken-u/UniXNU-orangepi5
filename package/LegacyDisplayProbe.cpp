@@ -2,9 +2,10 @@
 // Bounded offline original lifecycle instrument; no desktop claim.
 // LegacyDisplayProbe.cpp of UniXNU-sheng, as the community UniXNU-qemu repository cut it and as UniXNU-evb10 cut it for the RK3588 EVB10
 // (BSD-2-Clause-Patent, Copyright (c) 2026, UniXNU contributors), cut once more for the Orange Pi 5: the late probe starts the key store
-// stand-in, the HID services (opi5-hid=1) and the Mali-G610 (mali=N, off without it) and then publishes the UEFI frame buffer (the HDMI0
-// scanout the firmware set up) as the system display. What belongs to the EVB10 is gone: its own frame buffer and the VOP2 direct scanout
-// through the VOP IOMMU, and the starts of its touch, Wi-Fi, audio and DVFS drivers (this board has none of them yet).
+// stand-in, the HID services (opi5-hid=1) and the Mali-G610 (mali=N, off without it) and then publishes a display. Without evb10-fb-w/-h the
+// UEFI GOP (HDMI 1920x1080 landscape) is the system surface; with those arguments the probe allocates a portrait kernel frame buffer
+// (EVB10's 1072x1904) for SpringBoard and letterboxes each finished swap into the GOP so the monitor still shows something. VOP2 direct
+// scanout and the EVB10's touch / Wi-Fi / audio / DVFS starts are not here.
 #include <IOKit/IOPlatformExpert.h>
 #include <IOKit/IODeviceMemory.h>
 #include <IOKit/IOBufferMemoryDescriptor.h>
@@ -22,7 +23,10 @@
 #include <libkern/c++/OSKext.h>
 #include <kern/thread_call.h>
 #include <kern/clock.h>
+#include "Evb10Console.h"
 extern "C" kmod_info_t g_kernel_kmod_info;
+extern "C" void pmap_set_cache_attributes(unsigned int pn, unsigned int attributes);
+extern "C" vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
 extern "C" void native_legacy_display_static_init(void) __asm__("__GLOBAL__sub_I_NativeLegacyDisplay.cpp");
 extern "C" IOService *native_legacy_display_allocate(void);
 extern "C" void native_gop_presenter_static_init(void) __asm__("__GLOBAL__sub_I_NativeGOPPresenter.cpp");
@@ -33,6 +37,10 @@ static IOService *activeGOPPresenter,*activeGOPNub;
 static IOService *gpuHandoffPresenter;
 extern "C" volatile uint64_t native_gop_gpu_offers,native_gop_gpu_completions,native_gop_gpu_failures,native_gop_gpu_abandoned,native_gop_wait_stats[7];
 extern "C" volatile uint64_t native_legacy_early_retires,native_legacy_early_failures;
+extern "C" volatile uint32_t native_legacy_direct[16];
+extern "C" volatile uint32_t evb10_vop_direct_stats[8];
+extern "C" volatile uint32_t native_legacy_direct[16];
+extern "C" volatile uint32_t evb10_vop_direct_stats[8];
 extern "C" bool native_gop_gpu_offer(IOService *,void *display,IOMemoryDescriptor *,uint64_t stride,uint32_t width,uint32_t height);
 extern "C" void native_gop_presenter_set_source(IOService *presenter,IOService *nub);
 volatile uint32_t native_legacy_gpu_fallbacks,native_legacy_gpu_last_status;
@@ -41,6 +49,8 @@ static IOService *activeLegacyDisplay;
 // The pulse is permanently closed before any system-frame copy.
 static IOMemoryMap *diagnosticAnchorMapping;
 extern "C" int boot_progress_pulse_anchor(uintptr_t,uint64_t,unsigned,unsigned,unsigned) __attribute__((weak_import));
+// Letterbox counters / GOP scanout (filled by opi5_fb_override when evb10-fb-w/-h are set).
+static volatile uint32_t opi5_gop_presents,opi5_gop_present_fail;
 static IORegistryEntry *unitScaleChosen;
 static bool unitScaleAdded,unitRotationAdded;
 static void finishUnitScalePolicy(bool keep) {
@@ -314,9 +324,10 @@ void native_legacy_copy_timing_observed(uint64_t ticks,uint64_t bytes) {
     native_legacy_copy_n=native_legacy_copy_n+1;native_legacy_copy_last=ticks;native_legacy_copy_sum=native_legacy_copy_sum+ticks;
     if(ticks>native_legacy_copy_max)native_legacy_copy_max=ticks;
 }
+static void opi5_gop_present(void);
 __attribute__((noinline)) void native_legacy_transfer_observed(IOReturn status,const void *request,uint64_t bytes) {
     native_legacy_transfer_calls=native_legacy_transfer_calls+1;
-    if(status==kIOReturnSuccess){native_legacy_swap_stage(2);frameClockNote(shownClock);}
+    if(status==kIOReturnSuccess){native_legacy_swap_stage(2);frameClockNote(shownClock);opi5_gop_present();}
     native_legacy_transfer_status=status;native_legacy_transfer_request=(uintptr_t)request;native_legacy_transfer_bytes=bytes;
     if(status!=kIOReturnSuccess && boot_progress_stage) {
         char message[120];snprintf(message,sizeof(message),"DISPLAY COPY FAILED status=%08x prepare=%u tries=%u",
@@ -531,6 +542,16 @@ static void opi5_display_report(const char *where) {
     printf("opi5: display %s: IOSurface kext %d found %u video %#llx+%#llx gop map %#llx %ux%u\n",where,native_legacy_surface_status,
         native_legacy_surface_found,(unsigned long long)native_legacy_video_base,(unsigned long long)native_legacy_video_bytes,
         (unsigned long long)native_legacy_gop_map,native_legacy_gop_width,native_legacy_gop_height);
+    // FBSDisplayMode validity BRK (FrontBoardServices): dump the powered pair (power pair [5836]/[5840]) and unit-scale/PM
+    // that NativeLegacyDisplay left after start — CA builds CADisplayMode from these.
+    uint32_t powered0=0xffffffffU,powered1=0xffffffffU,dimW=0,dimH=0;
+    if(activeLegacyDisplay) {
+        auto bytes=reinterpret_cast<unsigned char *>(activeLegacyDisplay);
+        memcpy(&powered0,bytes+5836,4);memcpy(&powered1,bytes+5840,4);
+        memcpy(&dimW,bytes+5808,4);memcpy(&dimH,bytes+5812,4);
+    }
+    printf("opi5: display %s: powered %u/%u dims %ux%u unit %d/%u pm %u/%d\n",where,powered0,powered1,dimW,dimH,
+        native_legacy_unit_scale_status,native_legacy_chosen_scale,native_legacy_pm_stage,native_legacy_pm_status);
 }
 // What the original userland does with the display, once it is live: this board has no debugger, and "the panel still shows the
 // boot log" has two very different causes (nobody asks for a frame, or frames are asked for and refused). Every 5 s a thread call
@@ -553,10 +574,11 @@ static void opi5_display_tick(thread_call_param_t,thread_call_param_t) {
     if(moved || beat%6==0) {
         printf("opi5: display t+%us: opened %u (last pid %d type %u status %x %s) seen %u clients, %u calls\n",beat*5,native_legacy_client_calls,
             native_legacy_client_pid,native_legacy_client_type,(unsigned)native_legacy_client_status,native_legacy_client_class,seenClientCount,calls);
-        printf("opi5: display t+%us: swap ok %u rej %u (reason %u) copy %u (status %x, %llu B, %llu copies) retired %u gen %u/%u frames %u\n",beat*5,
+            printf("opi5: display t+%us: swap ok %u rej %u (reason %u) copy %u (status %x, %llu B, %llu copies) retired %u gen %u/%u frames %u gop %u/%u\n",beat*5,
             native_legacy_swap_accepted_count,native_legacy_swap_rejected_count,native_legacy_rej_reason,native_legacy_transfer_calls,
             (unsigned)native_legacy_transfer_status,(unsigned long long)native_legacy_transfer_bytes,(unsigned long long)native_legacy_copy_n,
-            native_legacy_retirement_calls,native_legacy_retired_generation,native_legacy_presented_generation,native_legacy_frame_count);
+            native_legacy_retirement_calls,native_legacy_retired_generation,native_legacy_presented_generation,native_legacy_frame_count,
+            opi5_gop_presents,opi5_gop_present_fail);
         frameClockReport("swaps handed over (the render server's rate)",swapClock,beat);
         frameClockReport("frames shown (the scanout's rate)",shownClock,beat);
         if(native_gop_gpu_offers || native_gop_wait_stats[0])
@@ -564,7 +586,17 @@ static void opi5_display_tick(thread_call_param_t,thread_call_param_t) {
                 beat*5,(unsigned long long)native_gop_gpu_offers,(unsigned long long)native_gop_gpu_completions,(unsigned long long)native_gop_gpu_failures,
                 (unsigned long long)native_gop_gpu_abandoned,(unsigned long long)native_legacy_early_retires,(unsigned long long)native_legacy_early_failures,
                 native_legacy_gpu_fallbacks,native_legacy_gpu_last_status,(unsigned long long)native_gop_wait_stats[0],(unsigned long long)native_gop_wait_stats[1]);
-        // The pixel copy into the scanout buffer, per swap (the counter runs at cntfrq).
+        if(native_legacy_direct[0] || native_legacy_direct[7] || evb10_vop_direct_stats[0])
+            printf("opi5: display t+%us: vop direct (iommu %u, status %08x %08x): flips %u, surfaces mapped %u (map failures %u, let go %u, remaps %u, zap timeouts %u), latch mean %u us longest %u us (%u over 50 ms), copy fallbacks %u, back to boot %u\n",
+                beat*5,evb10_vop_direct_stats[0],evb10_vop_direct_stats[1],evb10_vop_direct_stats[2],native_legacy_direct[0],native_legacy_direct[1],
+                native_legacy_direct[2],native_legacy_direct[6],evb10_vop_direct_stats[3],evb10_vop_direct_stats[4],
+                native_legacy_direct[0]?native_legacy_direct[5]/native_legacy_direct[0]:0,native_legacy_direct[4],native_legacy_direct[3],
+                native_legacy_direct[7],native_legacy_direct[8]);
+        if(native_legacy_direct[9] || native_legacy_direct[13] || native_legacy_direct[12])
+            printf("opi5: display t+%us: fence: %u of %u swaps arrived with GPU work not done; %u flips waited (mean %u us, longest %u us, %u gave up)\n",
+                beat*5,native_legacy_direct[14],native_legacy_direct[13],native_legacy_direct[9],
+                native_legacy_direct[9]?native_legacy_direct[10]/native_legacy_direct[9]:0,native_legacy_direct[11],native_legacy_direct[12]);
+        // The pixel copy into the scanout buffer, per swap (the counter runs at cntfrq). Zero when VOP direct owns scanout.
         uint64_t frequency=0;__asm__ volatile("mrs %0, cntfrq_el0":"=r"(frequency));
         if(frequency && native_legacy_copy_n)
             printf("opi5: display t+%us: copy of %llu B: average %llu us, longest %llu us, last %llu us over %llu copies (frame buffer %s)\n",beat*5,
@@ -600,6 +632,103 @@ static void opi5_display_reporter_start(void) {
     displayReportCall=thread_call_allocate(opi5_display_tick,nullptr);
     if(displayReportCall)opi5_display_arm();
 }
+// evb10-fb-w/-h: kernel-owned portrait surface for SpringBoard (same contract as EVB10). HDMI keeps scanning the
+// firmware GOP; each finished CPU copy is letterboxed into it (opi5_gop_present). The allocation may sit above 4 GiB
+// (this board's owned window does): the VOP never reads this surface, only the CPU blit does.
+static IOBufferMemoryDescriptor *opi5_fb_memory;
+static bool opi5_fb_wc;
+static uint64_t opi5_gop_base;
+static uint32_t opi5_gop_w,opi5_gop_h,opi5_gop_row;
+static volatile uint32_t *opi5_gop_pixels;
+static void opi5_fb_writecombine(void) {
+    unsigned want=1;PE_parse_boot_argn("evb10-fb-wc",&want,sizeof want);
+    if(!want || !opi5_fb_memory || !evb10_fb_base || opi5_fb_wc)return;
+    const uint64_t first=evb10_fb_base>>PAGE_SHIFT,pages=round_page((uint64_t)evb10_fb_row*evb10_fb_h)>>PAGE_SHIFT;
+    for(uint64_t i=0;i<pages;++i)pmap_set_cache_attributes((unsigned int)(first+i),0x6U);
+    __asm__ volatile("dsb sy\n\tisb" ::: "memory");
+    opi5_fb_wc=true;
+    printf("opi5: fb: %llu pages of the frame buffer are write-combined now\n",(unsigned long long)pages);
+}
+static void opi5_fb_override(void) {
+    unsigned w=0,h=0;
+    if(!PE_parse_boot_argn("evb10-fb-w",&w,sizeof w) || !PE_parse_boot_argn("evb10-fb-h",&h,sizeof h) || opi5_fb_memory)return;
+    PE_Video old={};
+    if(PE_current_console(&old) || old.v_depth!=32 || old.v_rotate) {
+        printf("opi5: fb: the firmware frame buffer is not 32 bit, left alone\n");return;
+    }
+    if(w<64 || h<64 || w>1080 || h>1920 || (w&1)) {
+        printf("opi5: fb: %ux%u is outside 64..1080 x 64..1920 (even width), left alone\n",w,h);return;
+    }
+    opi5_gop_base=old.v_baseAddr;opi5_gop_w=(uint32_t)old.v_width;opi5_gop_h=(uint32_t)old.v_height;
+    opi5_gop_row=(uint32_t)old.v_rowBytes;
+    // Do NOT ml_io_map the 8 MiB GOP here: the I/O VA window is small (EVB10 touch2:
+    // 8 MiB ml_io_map exhausted it and a later 1 MiB kmem_alloc panicked). Letterbox maps
+    // the GOP through an IOMemoryDescriptor into the kernel map instead. Default on: without
+    // it SpringBoard paints the portrait FB while HDMI keeps the frozen vc_mirror log (sb15).
+    // opi5-gop-blit=0 turns the blit off.
+    unsigned blit=1;PE_parse_boot_argn("opi5-gop-blit",&blit,sizeof blit);
+    if(blit==1 && opi5_gop_base && opi5_gop_w && opi5_gop_h && opi5_gop_row>=opi5_gop_w*4) {
+        IOMemoryDescriptor *gop=IOMemoryDescriptor::withPhysicalAddress(opi5_gop_base,
+            (IOByteCount)opi5_gop_row*opi5_gop_h,kIODirectionOut);
+        IOMemoryMap *map=gop?gop->map(kIOMapInhibitCache):nullptr;
+        if(map){opi5_gop_pixels=(volatile uint32_t *)map->getVirtualAddress();OSSafeReleaseNULL(gop);}
+        else {OSSafeReleaseNULL(gop);printf("opi5: fb: could not map the GOP at %#llx for letterbox\n",(unsigned long long)opi5_gop_base);}
+    } else if(opi5_gop_base) {
+        printf("opi5: fb: GOP %#llx %ux%u kept for scanout; letterbox off (opi5-gop-blit=1 to enable)\n",
+            (unsigned long long)opi5_gop_base,opi5_gop_w,opi5_gop_h);
+    }
+    const uint64_t rowBytes=(uint64_t)w*4,bytes=round_page(rowBytes*h);
+    // Contiguous anywhere the kernel can give: HDMI scanout stays on the GOP; this surface is CPU-only.
+    IOBufferMemoryDescriptor *memory=IOBufferMemoryDescriptor::inTaskWithOptions(kernel_task,
+        static_cast<IOOptionBits>(kIODirectionInOut)|kIOMemoryPhysicallyContiguous|kIOMapInhibitCache,
+        bytes,PAGE_SIZE);
+    if(!memory){printf("opi5: fb: no %llu contiguous bytes, left alone\n",bytes);return;}
+    if(memory->prepare()!=kIOReturnSuccess){printf("opi5: fb: the frame buffer could not be wired, left alone\n");memory->release();return;}
+    IOByteCount length=0;
+    const uint64_t phys=memory->getPhysicalSegment(0,&length,kIOMemoryMapperNone);
+    uint32_t *pixels=static_cast<uint32_t *>(memory->getBytesNoCopy());
+    if(!pixels || !phys || length<bytes || (phys&0xfff)) {
+        printf("opi5: fb: surface at %#llx, %llu contiguous bytes of %llu: not usable, left alone\n",phys,(uint64_t)length,bytes);
+        (void)memory->complete();memory->release();return;
+    }
+    for(uint64_t i=0;i<bytes/4;++i)pixels[i]=0xff000000U;
+    __asm__ volatile("dsb sy" ::: "memory");
+    opi5_fb_memory=memory;
+    evb10_fb_row=(uint32_t)rowBytes;evb10_fb_w=w;evb10_fb_h=h;evb10_fb_kva=(uintptr_t)pixels;
+    __asm__ volatile("dmb ish" ::: "memory");
+    evb10_fb_base=phys;
+    printf("opi5: fb: %ux%u at %#llx (%llu bytes, kernel %p), was %lux%lu at %#lx (GOP letterbox %ux%u)\n",w,h,phys,bytes,
+        static_cast<void *>(pixels),old.v_width,old.v_height,old.v_baseAddr,opi5_gop_w,opi5_gop_h);
+}
+// Nearest-neighbour letterbox of the portrait kernel FB into the landscape GOP (fit, centred).
+// Bars are cleared once; later presents only rewrite the image rectangle.
+static void opi5_gop_present(void) {
+    if(!evb10_fb_kva || !opi5_gop_pixels || !evb10_fb_w || !evb10_fb_h || !opi5_gop_w || !opi5_gop_h) {
+        opi5_gop_present_fail=opi5_gop_present_fail+1;return;
+    }
+    const uint32_t sw=evb10_fb_w,sh=evb10_fb_h,srow=evb10_fb_row/4;
+    const uint32_t dw=opi5_gop_w,dh=opi5_gop_h,drow=opi5_gop_row/4;
+    const uint32_t outH=dh,outW=(uint32_t)((sw*(uint64_t)dh)/sh);   // fit height (portrait into landscape)
+    const uint32_t x0=outW<dw?(dw-outW)/2:0,y0=0;
+    static bool barsCleared;
+    volatile uint32_t *dst=opi5_gop_pixels;
+    const uint32_t *src=(const uint32_t *)evb10_fb_kva;
+    if(!barsCleared) {
+        for(uint32_t y=0;y<dh;++y) {
+            volatile uint32_t *row=dst+y*drow;
+            for(uint32_t x=0;x<dw;++x)row[x]=0xff000000U;
+        }
+        barsCleared=true;
+    }
+    for(uint32_t y=0;y<outH;++y) {
+        const uint32_t sy=(uint32_t)((y*(uint64_t)sh)/outH);
+        const uint32_t *srowp=src+sy*srow;
+        volatile uint32_t *row=dst+(y0+y)*drow+x0;
+        for(uint32_t x=0;x<outW;++x)row[x]=srowp[(x*(uint64_t)sw)/outW];
+    }
+    __asm__ volatile("dsb sy" ::: "memory");
+    opi5_gop_presents=opi5_gop_presents+1;
+}
 static void legacy_probe_body(void);
 void native_legacy_display_probe(void);
 void native_legacy_display_probe(void) {
@@ -616,6 +745,7 @@ static void legacy_probe_body(void) {
     native_legacy_display_static_init();native_gop_presenter_static_init();native_legacy_meta_status=OSMetaClass::postModLoad(handle);
     if(native_legacy_meta_status){native_legacy_display_checkpoint();return;}
     PE_Video video={};native_legacy_stage=2;
+    opi5_fb_override();
     if(PE_current_console(&video) || !video.v_baseAddr || !video.v_width || !video.v_height || video.v_depth!=32
         || video.v_rotate || video.v_width>16384 || video.v_height>16384 || video.v_rowBytes<video.v_width*4
         || video.v_rowBytes>UINT64_MAX/video.v_height){native_legacy_display_checkpoint();return;}
@@ -634,8 +764,9 @@ static void legacy_probe_body(void) {
     native_legacy_display_checkpoint();
 }
 // The original IOHIDFamily (IOHIDSystem, IOHIDResource and the user clients backboardd connects to) and IOHIDEventDriver: both are
-// roots of the OS profile, and backboardd (display and input server) waits for them. No input device is attached yet; this only brings
-// the services up. opi5-hid=1 turns it on.
+// roots of the OS profile, and backboardd (display and input server) waits for them. opi5-hid=1 turns it on; opi5-hid-input=1 (or
+// evb10-hid-input=1) then starts NativeHidInput on the IOHIDResource (digitizer + keyboard; package/Evb10HidProbe.cpp).
+extern "C" void evb10_hid_input_start(IOService *resource);
 static void opi5_hid_load(void) {
     unsigned want=0;PE_parse_boot_argn("opi5-hid",&want,sizeof want);
     if(want!=1)return;
@@ -647,7 +778,10 @@ static void opi5_hid_load(void) {
         OSDictionary *match=IOService::serviceMatching("IOHIDResource");
         IOService *found=match?IOService::waitForMatchingService(match,5000000000ULL):nullptr;
         resource=found!=nullptr;
+        printf("opi5: hid: IOHIDFamily %d IOHIDEventDriver %d IOHIDResource %s\n",family,driver,resource?"found":"missing");
+        if(found)evb10_hid_input_start(found);
         OSSafeReleaseNULL(found);OSSafeReleaseNULL(match);
+        return;
     }
     printf("opi5: hid: IOHIDFamily %d IOHIDEventDriver %d IOHIDResource %s\n",family,driver,resource?"found":"missing");
 }
@@ -736,6 +870,7 @@ static void legacy_late_probe_body(void) {
                                 evb10_vc_mirror=false;
                             }
                         }
+                        opi5_fb_writecombine();
                         opi5_display_reporter_start();
                         OSSafeReleaseNULL(displayTreeParent);
                         native_legacy_display_checkpoint();return;

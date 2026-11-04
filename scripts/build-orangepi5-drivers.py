@@ -46,10 +46,13 @@ COMPONENTS = {
     # directory), binds the objects to the original IOMobileFramebufferLegacy and makes the archive. drivers/GopFramebuffer and
     # drivers/AppleKeyStoreState are the UniXNU components of those names; NativeLegacyDisplay is the unforked one (the EVB10 forks it for
     # its VOP2 direct scanout, which this board does not have).
-    'NativeLegacyDisplay': (('drivers/GopFramebuffer/NativeLegacyDisplay.cpp',), 'native-legacy-display',
+    # Board fork (package/Opi5Display): force primary + publish IOMFBDisplayRefresh at sheng-vsync>=60 (upstream only does >60).
+    'NativeLegacyDisplay': (('kits/orangepi5/Opi5Display/NativeLegacyDisplay.cpp',), 'native-legacy-display',
                             ('build/native-legacy-display', 'drivers/GopFramebuffer'), 'object'),
     'NativeGOPPresenter': (('drivers/GopFramebuffer/NativeGOPPresenter.cpp',), 'native-gop-presenter', (), 'object'),
     'NativeKeyStoreEvents': (('drivers/AppleKeyStoreState/NativeKeyStoreEvents.cpp',), 'apple-key-store-state', (), 'object'),
+    # Owned HID keyboard + digitizer (package/Evb10Hid). scripts/build-orangepi5-hid.py audits and archives it.
+    'NativeHidInput': (('kits/orangepi5/Evb10Hid/NativeHidInput.cpp',), 'opi5-hid', ('build/opi5-hid',), 'object'),
 }
 
 # The record of a kernel object compiled for the same machine configuration and
@@ -64,7 +67,12 @@ LC_BUILD_VERSION = 0x32
 DEPLOYMENT = (2, 0x110000)
 
 
-FORCE_INCLUDE = {}
+# Own frame buffer (evb10-fb-w/-h): PE_current_console must return it in the UniXNU GOP
+# drivers as well as in this board's probe (Evb10Console.h; PE_state is read-only after lockdown).
+FORCE_INCLUDE = {
+    'NativeLegacyDisplay': 'kits/orangepi5/Evb10Console.h',
+    'NativeGOPPresenter': 'kits/orangepi5/Evb10Console.h',
+}
 
 
 def compiler_command(record, source, destination, includes=(), force_include=None):

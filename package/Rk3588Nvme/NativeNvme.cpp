@@ -756,6 +756,20 @@ void wdtKicker(void *argument, wait_result_t) {
     IOSleep(kWdtFeedMs);
   }
   IOLog("NativeNvme: wdt-kick: %u s are over, not feeding the watchdog any more\n", seconds);
+  // Hardware WDT sometimes never fires once the count has been restarted from XNU (sb13: feed stopped, no reset).
+  // Trigger the same CRU first-global-reset PSCI uses so headless boards come back to U-Boot without a pull-plug.
+  {
+    constexpr uint64_t kCruGlbSrstFst = 0xFD7C0A00ull;
+    vm_offset_t srst = ml_io_map(static_cast<vm_offset_t>(kCruGlbSrstFst & ~0xfffull), 0x1000);
+    if (srst) {
+      volatile uint32_t *reg = reinterpret_cast<volatile uint32_t *>(srst + (kCruGlbSrstFst & 0xfffu));
+      IOLog("NativeNvme: wdt-kick: writing CRU_GLB_SRST_FST for a soft reset\n");
+      *reg = 0xFDB9;
+      __asm__ volatile("dsb sy\nisb" ::: "memory");
+    } else {
+      IOLog("NativeNvme: wdt-kick: cannot map CRU_GLB_SRST_FST\n");
+    }
+  }
 }
 
 // The ApplePMGRNub the original AMFI waits for.
